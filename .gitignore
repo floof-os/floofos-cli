@@ -1,6 +1,6 @@
 # Binaries
-floof-cli
-floofctl
+/floof-cli
+/floofctl
 *.exe
 *.exe~
 *.dll
