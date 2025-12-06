@@ -927,13 +927,12 @@ func processCommand(line string, liner *liner.State) bool {
 		return false
 	}
 
-	if currentMode == OperationalMode && cmd != "show" && cmd != "configure" && cmd != "help" && cmd != "ping" && cmd != "traceroute" && cmd != "system" {
-		fmt.Println("Error: Only 'show' commands allowed in operational mode")
-		fmt.Println("Use 'configure' to enter configuration mode")
-		return false
-	}
-
 	if cmd == "system" && len(args) >= 2 && args[1] == "install" {
+		if currentMode == OperationalMode {
+			fmt.Println("Error: 'system install' requires configuration mode")
+			fmt.Println("Use 'configure' to enter configuration mode first")
+			return false
+		}
 		if currentUser.Privilege < PrivilegeAdmin {
 			fmt.Println("Error: Admin privilege required for system installation")
 			return false
@@ -942,6 +941,12 @@ func processCommand(line string, liner *liner.State) bool {
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 		}
+		return false
+	}
+
+	if currentMode == OperationalMode && cmd != "show" && cmd != "configure" && cmd != "help" && cmd != "ping" && cmd != "traceroute" && cmd != "system" {
+		fmt.Println("Error: Only 'show' commands allowed in operational mode")
+		fmt.Println("Use 'configure' to enter configuration mode")
 		return false
 	}
 
