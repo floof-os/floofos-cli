@@ -25,6 +25,7 @@ import (
 
 	"github.com/floof-os/floofos-cli/internal/security"
 	"github.com/floof-os/floofos-cli/internal/snmp"
+	"github.com/floof-os/floofos-cli/internal/system"
 	ui "github.com/gizak/termui/v3"
 	"github.com/gizak/termui/v3/widgets"
 	"github.com/peterh/liner"
@@ -282,6 +283,7 @@ var completionTree = map[string][]string{
 	"show ospf":           {},
 	"show symbols":        {},
 	"system": {
+		"install",
 		"reboot",
 	},
 	"set system ntp": {
@@ -925,9 +927,21 @@ func processCommand(line string, liner *liner.State) bool {
 		return false
 	}
 
-	if currentMode == OperationalMode && cmd != "show" && cmd != "configure" && cmd != "help" && cmd != "ping" && cmd != "traceroute" {
+	if currentMode == OperationalMode && cmd != "show" && cmd != "configure" && cmd != "help" && cmd != "ping" && cmd != "traceroute" && cmd != "system" {
 		fmt.Println("Error: Only 'show' commands allowed in operational mode")
 		fmt.Println("Use 'configure' to enter configuration mode")
+		return false
+	}
+
+	if cmd == "system" && len(args) >= 2 && args[1] == "install" {
+		if currentUser.Privilege < PrivilegeAdmin {
+			fmt.Println("Error: Admin privilege required for system installation")
+			return false
+		}
+		err := system.RunInstall()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+		}
 		return false
 	}
 
@@ -1365,6 +1379,23 @@ func showHelp(line string) {
 			showTracerouteHelp()
 			return
 		}
+
+		if len(args) >= 1 && args[0] == "system" {
+			if len(args) == 1 {
+				fmt.Println("Possible completions:")
+				fmt.Println("  install       Install FloofOS to permanent storage")
+				return
+			}
+			if len(args) == 2 && args[1] == "install" {
+				fmt.Println("system install - Install FloofOS to disk")
+				fmt.Println("")
+				fmt.Println("This command will install FloofOS to permanent storage.")
+				fmt.Println("All data on the target disk will be erased.")
+				fmt.Println("")
+				fmt.Println("Usage: system install")
+				return
+			}
+		}
 	}
 
 	if baseCmd == "" {
@@ -1377,6 +1408,7 @@ func showHelp(line string) {
 			output.WriteString("  help                  Display this text\n")
 			output.WriteString("  ping                  Ping remote host\n")
 			output.WriteString("  show                  Show system information\n")
+			output.WriteString("  system install        Install FloofOS to disk\n")
 			output.WriteString("  traceroute            Trace route to destination\n")
 			output.WriteString("\n")
 		} else {
