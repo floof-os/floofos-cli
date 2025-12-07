@@ -30,17 +30,11 @@ type InstallConfig struct {
 	ConfigCommit   int
 }
 
-var stdinReader *bufio.Reader
-
-func init() {
-	stdinReader = bufio.NewReader(os.Stdin)
-}
-
-func promptInput(prompt string, defaultVal string) string {
+func promptInstallInput(prompt string, defaultVal string) string {
 	fmt.Print(prompt)
 
-	stdinReader.Reset(os.Stdin)
-	input, err := stdinReader.ReadString('\n')
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
 	if err != nil {
 		return defaultVal
 	}
@@ -50,6 +44,31 @@ func promptInput(prompt string, defaultVal string) string {
 		return defaultVal
 	}
 	return input
+}
+
+func readPassword(prompt string) (string, error) {
+	fmt.Print(prompt)
+
+	oldState, err := term.GetState(int(syscall.Stdin))
+	if err != nil {
+		reader := bufio.NewReader(os.Stdin)
+		input, err := reader.ReadString('\n')
+		fmt.Println()
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(input), nil
+	}
+
+	password, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Println()
+
+	term.Restore(int(syscall.Stdin), oldState)
+
+	if err != nil {
+		return "", err
+	}
+	return string(password), nil
 }
 
 func listConfigCommits() []int {
@@ -91,7 +110,7 @@ func RunInstall() error {
 	fmt.Println("All existing data on the target disk will be erased.")
 	fmt.Println()
 
-	confirm := promptInput("Would you like to continue? [y/N]: ", "n")
+	confirm := promptInstallInput("Would you like to continue? [y/N]: ", "n")
 	if confirm != "y" && confirm != "Y" && confirm != "yes" {
 		fmt.Println("Installation aborted.")
 		return nil
@@ -118,14 +137,14 @@ func RunInstall() error {
 
 	var targetDisk string
 	if len(disks) == 1 {
-		input := promptInput(fmt.Sprintf("Which disk should be used for installation? (Default: %s): ", disks[0].Path), "")
+		input := promptInstallInput(fmt.Sprintf("Which disk should be used for installation? (Default: %s): ", disks[0].Path), "")
 		if input == "" {
 			targetDisk = disks[0].Path
 		} else {
 			targetDisk = input
 		}
 	} else {
-		input := promptInput("Which disk should be used for installation? [1]: ", "1")
+		input := promptInstallInput("Which disk should be used for installation? [1]: ", "1")
 		idx := 0
 		fmt.Sscanf(input, "%d", &idx)
 		if idx < 1 || idx > len(disks) {
@@ -135,17 +154,17 @@ func RunInstall() error {
 	}
 
 	fmt.Println()
-	confirm = promptInput("Installation will delete all data on the drive. Continue? [y/N]: ", "n")
+	confirm = promptInstallInput("Installation will delete all data on the drive. Continue? [y/N]: ", "n")
 	if confirm != "y" && confirm != "Y" && confirm != "yes" {
 		fmt.Println("Installation aborted.")
 		return nil
 	}
 
 	fmt.Println()
-	promptInput("Would you like to use all the free space on the drive? [Y/n]: ", "y")
+	promptInstallInput("Would you like to use all the free space on the drive? [Y/n]: ", "y")
 
 	fmt.Println()
-	consoleInput := promptInput("What console should be used by default? (K: KVM, S: Serial) [K]: ", "K")
+	consoleInput := promptInstallInput("What console should be used by default? (K: KVM, S: Serial) [K]: ", "K")
 	consoleInput = strings.ToUpper(consoleInput)
 	consoleType := "kvm"
 	if consoleInput == "S" {
@@ -154,24 +173,20 @@ func RunInstall() error {
 
 	currentHostname, _ := os.Hostname()
 	fmt.Println()
-	hostname := promptInput(fmt.Sprintf("What is the hostname of this system? [%s]: ", currentHostname), currentHostname)
+	hostname := promptInstallInput(fmt.Sprintf("What is the hostname of this system? [%s]: ", currentHostname), currentHostname)
 
 	fmt.Println()
-	fmt.Print("Please enter a password for the 'floofos' user: ")
-	password1, err := term.ReadPassword(int(syscall.Stdin))
-	fmt.Println()
+	password1, err := readPassword("Please enter a password for the 'floofos' user: ")
 	if err != nil {
 		return fmt.Errorf("failed to read password: %v", err)
 	}
 
-	fmt.Print("Please confirm the password: ")
-	password2, err := term.ReadPassword(int(syscall.Stdin))
-	fmt.Println()
+	password2, err := readPassword("Please confirm the password: ")
 	if err != nil {
 		return fmt.Errorf("failed to read password: %v", err)
 	}
 
-	if string(password1) != string(password2) {
+	if password1 != password2 {
 		return fmt.Errorf("passwords do not match")
 	}
 
@@ -208,7 +223,7 @@ func RunInstall() error {
 		}
 		fmt.Println()
 
-		preserveInput := promptInput("Would you like to preserve configuration? [Y/n]: ", "y")
+		preserveInput := promptInstallInput("Would you like to preserve configuration? [Y/n]: ", "y")
 		if preserveInput != "n" && preserveInput != "N" && preserveInput != "no" {
 			preserveConfig = true
 
@@ -217,7 +232,7 @@ func RunInstall() error {
 				fmt.Printf("Using configuration: commit %d\n", configCommit)
 			} else {
 				fmt.Println()
-				selectInput := promptInput(fmt.Sprintf("Which configuration to restore? [1] (commit %d): ", commits[0]), "1")
+				selectInput := promptInstallInput(fmt.Sprintf("Which configuration to restore? [1] (commit %d): ", commits[0]), "1")
 				idx := 0
 				fmt.Sscanf(selectInput, "%d", &idx)
 				if idx < 1 || idx > len(commits) {
@@ -245,7 +260,7 @@ func RunInstall() error {
 	}
 	fmt.Println()
 
-	confirm = promptInput("Proceed with installation? [y/N]: ", "n")
+	confirm = promptInstallInput("Proceed with installation? [y/N]: ", "n")
 	if confirm != "y" && confirm != "Y" && confirm != "yes" {
 		fmt.Println("Installation aborted.")
 		return nil
@@ -263,7 +278,7 @@ func RunInstall() error {
 		"--disk", targetDisk,
 		"--hostname", hostname,
 		"--console", consoleType,
-		"--password", string(password1),
+		"--password", password1,
 		"--preserve-config", preserveArg,
 		"--config-commit", strconv.Itoa(configCommit),
 	)

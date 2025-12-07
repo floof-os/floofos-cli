@@ -8,7 +8,9 @@
 package system
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"sort"
@@ -86,6 +88,22 @@ func getInterfaceType(vppName string) string {
 	return "Unknown"
 }
 
+func promptFirstBootInput(prompt string, defaultVal string) string {
+	fmt.Print(prompt)
+
+	reader := bufio.NewReader(os.Stdin)
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return defaultVal
+	}
+	input = strings.TrimSpace(input)
+
+	if input == "" {
+		return defaultVal
+	}
+	return input
+}
+
 func generateMappings(interfaces []string) []InterfaceMapping {
 	typeCounters := make(map[string]int)
 	var mappings []InterfaceMapping
@@ -144,7 +162,7 @@ func RunFirstBootSetup() error {
 	}
 	fmt.Println()
 
-	confirm := promptInput("Configure interfaces? [Y/n]: ", "y")
+	confirm := promptFirstBootInput("Configure interfaces? [Y/n]: ", "y")
 	if confirm == "n" || confirm == "N" || confirm == "no" {
 		fmt.Println()
 		fmt.Println("Skipped. Configure manually with: lcp create <interface> host-if <name>")
