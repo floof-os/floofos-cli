@@ -40,7 +40,7 @@ var interfacePrefixes = map[string]struct {
 }
 
 func IsFirstBoot() bool {
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 30; i++ {
 		output, err := exec.Command("vppctl", "show", "lcp").Output()
 		if err == nil {
 			lines := strings.Split(string(output), "\n")
@@ -53,21 +53,23 @@ func IsFirstBoot() bool {
 			}
 			return lcpCount == 0
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(1 * time.Second)
 	}
-	return true
+	// VPP not responding after 30 seconds, skip wizard
+	return false
 }
 
 func getVPPInterfaces() []string {
 	var output []byte
 	var err error
 
-	for i := 0; i < 5; i++ {
+	// Retry up to 15 times with 1 second delay (15 seconds total)
+	for i := 0; i < 15; i++ {
 		output, err = exec.Command("vppctl", "show", "interface").Output()
 		if err == nil && len(output) > 0 {
 			break
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(1 * time.Second)
 	}
 
 	if err != nil || len(output) == 0 {

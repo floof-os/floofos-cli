@@ -19,9 +19,10 @@ import (
 )
 
 const (
-	nftablesConfigDir  = "/etc/nftables.d"
-	nftablesConfigFile = "/etc/nftables.conf"
-	floofosRulesFile   = "/etc/nftables.d/floofos.nft"
+	nftablesConfigDir        = "/etc/nftables.d"
+	nftablesConfigFile       = "/etc/nftables.conf"
+	floofosRulesFile         = "/etc/nftables.d/floofos.nft"
+	nftablesDataplaneService = "nftables-dataplane.service"
 )
 
 type FirewallRule struct {
@@ -115,63 +116,37 @@ table inet floofos {
 		}
 	}
 
-	loadCmd := exec.Command("nft", "-f", floofosRulesFile)
+	loadCmd := exec.Command("ip", "netns", "exec", "dataplane", "nft", "-f", floofosRulesFile)
 	if output, err := loadCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to load rules: %w\nOutput: %s", err, output)
+		return fmt.Errorf("failed to load rules in dataplane: %w\nOutput: %s", err, output)
 	}
 
-	enableCmd := exec.Command("systemctl", "enable", "nftables.service")
+	exec.Command("systemctl", "unmask", nftablesDataplaneService).Run()
+
+	enableCmd := exec.Command("systemctl", "enable", nftablesDataplaneService)
 	if output, err := enableCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to enable nftables: %w\nOutput: %s", err, output)
 	}
 
-	startCmd := exec.Command("systemctl", "start", "nftables.service")
+	startCmd := exec.Command("systemctl", "start", nftablesDataplaneService)
 	if output, err := startCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to start nftables: %w\nOutput: %s", err, output)
 	}
 
-	checkDataplane := exec.Command("ip", "netns", "list")
-	if dataplaneOutput, err := checkDataplane.CombinedOutput(); err == nil {
-		if strings.Contains(string(dataplaneOutput), "dataplane") {
-			dataplaneCheckCmd := exec.Command("ip", "netns", "exec", "dataplane", "nft", "list", "table", "inet", "floofos")
-			if _, checkErr := dataplaneCheckCmd.CombinedOutput(); checkErr != nil {
-
-				dataplaneLoadCmd := exec.Command("ip", "netns", "exec", "dataplane", "nft", "-f", floofosRulesFile)
-				if dpOutput, dpErr := dataplaneLoadCmd.CombinedOutput(); dpErr != nil {
-					fmt.Printf("Warning: Failed to load rules in dataplane namespace: %v\n", dpErr)
-					if len(dpOutput) > 0 {
-						fmt.Printf("Output: %s\n", string(dpOutput))
-					}
-				} else {
-					fmt.Println("firewall enabled")
-				}
-			}
-		}
-	}
-
+	fmt.Println("firewall enabled")
 	return nil
 }
 
 func DisableFirewall() error {
-	checkDataplane := exec.Command("ip", "netns", "list")
-	if dataplaneOutput, err := checkDataplane.CombinedOutput(); err == nil {
-		if strings.Contains(string(dataplaneOutput), "dataplane") {
-			dataplaneFlushCmd := exec.Command("ip", "netns", "exec", "dataplane", "nft", "flush", "ruleset")
-			dataplaneFlushCmd.Run()
-		}
-	}
+	flushCmd := exec.Command("ip", "netns", "exec", "dataplane", "nft", "flush", "ruleset")
+	flushCmd.Run()
 
-	cmd := exec.Command("nft", "flush", "ruleset")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to flush rules: %w\nOutput: %s", err, output)
-	}
-
-	stopCmd := exec.Command("systemctl", "stop", "nftables.service")
+	stopCmd := exec.Command("systemctl", "stop", nftablesDataplaneService)
 	if output, err := stopCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to stop nftables: %w\nOutput: %s", err, output)
 	}
 
-	disableCmd := exec.Command("systemctl", "disable", "nftables.service")
+	disableCmd := exec.Command("systemctl", "disable", nftablesDataplaneService)
 	if output, err := disableCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to disable nftables: %w\nOutput: %s", err, output)
 	}
@@ -182,7 +157,7 @@ func DisableFirewall() error {
 func GetFirewallStatus() (string, error) {
 	var output strings.Builder
 
-	cmd := exec.Command("systemctl", "is-active", "nftables.service")
+	cmd := exec.Command("systemctl", "is-active", nftablesDataplaneService)
 	serviceOutput, err := cmd.CombinedOutput()
 
 	status := strings.TrimSpace(string(serviceOutput))
@@ -220,8 +195,8 @@ func GetFirewallStatus() (string, error) {
 		lastModified = "unknown"
 	}
 
-	output.WriteString(fmt.Sprintf("Firewall: enabled\n"))
-	output.WriteString(fmt.Sprintf("Policy: input drop, forward accept, output accept\n"))
+	output.WriteString("Firewall: enabled\n")
+	output.WriteString("Policy: input drop, forward accept, output accept\n")
 	output.WriteString(fmt.Sprintf("Rules: %d active (%d accept, %d drop)\n", acceptCount+dropCount, acceptCount, dropCount))
 	output.WriteString(fmt.Sprintf("Last modified: %s\n", lastModified))
 

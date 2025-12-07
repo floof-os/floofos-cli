@@ -138,19 +138,31 @@ func RunInstall() error {
 	var targetDisk string
 	if len(disks) == 1 {
 		input := promptInstallInput(fmt.Sprintf("Which disk should be used for installation? (Default: %s): ", disks[0].Path), "")
-		if input == "" {
+		if input == "" || input == "1" {
 			targetDisk = disks[0].Path
-		} else {
+		} else if strings.HasPrefix(input, "/dev/") {
 			targetDisk = input
+		} else {
+			idx := 0
+			fmt.Sscanf(input, "%d", &idx)
+			if idx >= 1 && idx <= len(disks) {
+				targetDisk = disks[idx-1].Path
+			} else {
+				targetDisk = disks[0].Path
+			}
 		}
 	} else {
 		input := promptInstallInput("Which disk should be used for installation? [1]: ", "1")
-		idx := 0
-		fmt.Sscanf(input, "%d", &idx)
-		if idx < 1 || idx > len(disks) {
-			idx = 1
+		if strings.HasPrefix(input, "/dev/") {
+			targetDisk = input
+		} else {
+			idx := 0
+			fmt.Sscanf(input, "%d", &idx)
+			if idx < 1 || idx > len(disks) {
+				idx = 1
+			}
+			targetDisk = disks[idx-1].Path
 		}
-		targetDisk = disks[idx-1].Path
 	}
 
 	fmt.Println()

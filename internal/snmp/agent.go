@@ -20,7 +20,7 @@ const (
 	snmpdConfigFile        = "/etc/snmp/snmpd.conf"
 	snmpdConfigBackup      = "/etc/snmp/snmpd.conf.floofos.backup"
 	vppSnmpAgentService    = "vpp-snmp-agent.service"
-	snmpdService           = "snmpd.service"
+	snmpdService           = "snmpd-dataplane.service"
 	vppSnmpAgentConfigFile = "/etc/vpp/dataplane.yaml"
 )
 
@@ -57,6 +57,8 @@ func EnableSNMP() error {
 	if err := createSNMPDConfig(); err != nil {
 		return fmt.Errorf("failed to create snmpd config: %w", err)
 	}
+
+	exec.Command("systemctl", "unmask", snmpdService).Run()
 
 	cmd := exec.Command("systemctl", "enable", snmpdService)
 	if output, err := cmd.CombinedOutput(); err != nil {
