@@ -702,6 +702,10 @@ func main() {
 	fmt.Println(yellow + "Type ? for context help" + reset)
 	fmt.Println()
 
+	if err := system.RunFirstBootSetup(); err != nil {
+		fmt.Printf("Warning: First boot setup error: %v\n", err)
+	}
+
 	line := liner.NewLiner()
 	defer line.Close()
 

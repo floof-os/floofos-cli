@@ -30,16 +30,20 @@ type InstallConfig struct {
 	ConfigCommit   int
 }
 
+var stdinReader *bufio.Reader
+
+func init() {
+	stdinReader = bufio.NewReader(os.Stdin)
+}
+
 func promptInput(prompt string, defaultVal string) string {
 	fmt.Print(prompt)
 
-	oldState, err := term.MakeRaw(int(syscall.Stdin))
-	if err == nil {
-		term.Restore(int(syscall.Stdin), oldState)
+	stdinReader.Reset(os.Stdin)
+	input, err := stdinReader.ReadString('\n')
+	if err != nil {
+		return defaultVal
 	}
-
-	reader := bufio.NewReader(os.Stdin)
-	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(input)
 
 	if input == "" {
