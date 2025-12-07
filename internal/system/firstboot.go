@@ -40,26 +40,37 @@ var interfacePrefixes = map[string]struct {
 }
 
 func IsFirstBoot() bool {
-	output, err := exec.Command("vppctl", "show", "lcp").Output()
-	if err != nil {
-		return true
-	}
-
-	lines := strings.Split(string(output), "\n")
-	lcpCount := 0
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasPrefix(line, "itf") && !strings.HasPrefix(line, "---") {
-			lcpCount++
+	for i := 0; i < 10; i++ {
+		output, err := exec.Command("vppctl", "show", "lcp").Output()
+		if err == nil {
+			lines := strings.Split(string(output), "\n")
+			lcpCount := 0
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if line != "" && !strings.HasPrefix(line, "itf") && !strings.HasPrefix(line, "---") {
+					lcpCount++
+				}
+			}
+			return lcpCount == 0
 		}
+		time.Sleep(500 * time.Millisecond)
 	}
-
-	return lcpCount == 0
+	return true
 }
 
 func getVPPInterfaces() []string {
-	output, err := exec.Command("vppctl", "show", "interface").Output()
-	if err != nil {
+	var output []byte
+	var err error
+
+	for i := 0; i < 5; i++ {
+		output, err = exec.Command("vppctl", "show", "interface").Output()
+		if err == nil && len(output) > 0 {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	if err != nil || len(output) == 0 {
 		return nil
 	}
 

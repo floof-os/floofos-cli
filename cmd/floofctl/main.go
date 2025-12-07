@@ -728,8 +728,14 @@ func main() {
 			fmt.Println()
 			break
 		} else if err != nil {
-			fmt.Printf("Error reading input: %v\n", err)
-			break
+			line.Close()
+			line = liner.NewLiner()
+			line.SetCtrlCAborts(true)
+			line.SetCompleter(func(currentLine string) []string {
+				return completer(currentLine)
+			})
+			line.SetTabCompletionStyle(liner.TabPrints)
+			continue
 		}
 
 		input = strings.TrimSpace(input)
@@ -753,7 +759,15 @@ func main() {
 
 		auditLogCmd(redactPassword(input))
 
-		processCommand(input, line)
+		needRestart := processCommand(input, line)
+		if needRestart {
+			line = liner.NewLiner()
+			line.SetCtrlCAborts(true)
+			line.SetCompleter(func(currentLine string) []string {
+				return completer(currentLine)
+			})
+			line.SetTabCompletionStyle(liner.TabPrints)
+		}
 	}
 
 	line.Close()
@@ -941,11 +955,12 @@ func processCommand(line string, liner *liner.State) bool {
 			fmt.Println("Error: Admin privilege required for system installation")
 			return false
 		}
+		liner.Close()
 		err := system.RunInstall()
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 		}
-		return false
+		return true
 	}
 
 	if currentMode == OperationalMode && cmd != "show" && cmd != "configure" && cmd != "help" && cmd != "ping" && cmd != "traceroute" && cmd != "system" {
@@ -2167,7 +2182,7 @@ func createSystemUser(username, password string, privilege UserPrivilege) {
 # FloofCTL Auto-launch
 if [[ -t 0 && -z "$FLOOFCTL_SHELL" ]]; then
     export FLOOFCTL_SHELL=1
-    exec sudo /usr/local/bin/cli
+    exec /usr/local/bin/cli
 fi
 `
 	homeDir := fmt.Sprintf("/home/%s", username)
@@ -2206,6 +2221,7 @@ fi
 
 	sudoersContent := fmt.Sprintf("# FloofCTL sudoers for %s\n", username)
 	sudoersContent += fmt.Sprintf("%s ALL=(ALL) NOPASSWD:SETENV: /usr/local/bin/cli\n", username)
+	sudoersContent += fmt.Sprintf("%s ALL=(ALL) NOPASSWD: /sbin/ip netns exec dataplane /usr/bin/floof-cli\n", username)
 	sudoersContent += fmt.Sprintf("%s ALL=(ALL) NOPASSWD: /usr/bin/vppctl *\n", username)
 	sudoersContent += fmt.Sprintf("%s ALL=(ALL) NOPASSWD: /usr/sbin/birdc *\n", username)
 	sudoersContent += fmt.Sprintf("%s ALL=(ALL) NOPASSWD: /etc/vppcfg/.venv/bin/vppcfg *\n", username)
@@ -3248,11 +3264,22 @@ func setHostname(newHostname string) {
 	cmd := exec.Command("hostnamectl", "set-hostname", newHostname)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Printf("Error setting hostname: %v\n", err)
-		if len(output) > 0 {
-			fmt.Print(string(output))
+		if err := os.WriteFile("/etc/hostname", []byte(newHostname+"\n"), 0644); err != nil {
+			fmt.Printf("Error setting hostname: %v\n", err)
+			return
 		}
-		return
+
+		hostsData, _ := os.ReadFile("/etc/hosts")
+		hostsContent := string(hostsData)
+		if !strings.Contains(hostsContent, newHostname) {
+			hostsLine := fmt.Sprintf("127.0.1.1\t%s\n", newHostname)
+			hostsContent = hostsLine + hostsContent
+			os.WriteFile("/etc/hosts", []byte(hostsContent), 0644)
+		}
+
+		exec.Command("hostname", newHostname).Run()
+	} else if len(output) > 0 {
+		_ = output
 	}
 
 	currentHostname = newHostname
