@@ -695,7 +695,7 @@ func main() {
 	fmt.Println(white + " / _// / _ \\/ _ \\/ _// /_/ /\\ \\  " + reset)
 	fmt.Println(white + "/_/ /_/\\___/\\___/_/  \\____/___/  " + reset)
 	fmt.Println()
-	fmt.Println(white + "FloofOS 1.0 [Fast Line-rate Offload On Fabric OS]" + reset)
+	fmt.Println(white + "[Fast Line-rate Offload On Fabric OS]" + reset)
 	fmt.Println(white + "https://floofos.io" + reset)
 	fmt.Println(white + "Copyright (c) 2025" + reset)
 	fmt.Println()
