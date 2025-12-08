@@ -303,15 +303,10 @@ func RunInstall() error {
 		return fmt.Errorf("installation failed: %v", err)
 	}
 
-	fmt.Println()
-	fmt.Println("Installation complete.")
-	fmt.Println()
 	if preserveConfig {
+		fmt.Println()
 		fmt.Println("Your configuration has been preserved and will be restored on first boot.")
 	}
-	fmt.Println("Remove the installation media and reboot the system.")
-	fmt.Println("To reboot now, type: reboot")
-	fmt.Println()
 
 	return nil
 }

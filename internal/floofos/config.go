@@ -10,9 +10,11 @@
 package floofos
 
 import (
+	"bufio"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -459,18 +461,38 @@ func updateSystem(isInteractive bool) error {
 
 func rebootSystem(isInteractive bool) error {
 	if isInteractive {
-		color.Red("System reboot requested")
-		color.Yellow("Reboot functionality disabled for safety")
+		fmt.Print("Reboot system now? (Y/N): ")
+		reader := bufio.NewReader(os.Stdin)
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(strings.ToLower(input))
+		if input != "y" && input != "yes" {
+			fmt.Println("Reboot cancelled.")
+			return nil
+		}
+		fmt.Println("Rebooting system...")
 	}
-	return fmt.Errorf("reboot not implemented for safety")
+	cmd := exec.Command("systemctl", "reboot")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 func shutdownSystem(isInteractive bool) error {
 	if isInteractive {
-		color.Red("System shutdown requested")
-		color.Yellow("Shutdown functionality disabled for safety")
+		fmt.Print("Shutdown system now? (Y/N): ")
+		reader := bufio.NewReader(os.Stdin)
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(strings.ToLower(input))
+		if input != "y" && input != "yes" {
+			fmt.Println("Shutdown cancelled.")
+			return nil
+		}
+		fmt.Println("Shutting down system...")
 	}
-	return fmt.Errorf("shutdown not implemented for safety")
+	cmd := exec.Command("systemctl", "poweroff")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 func showNetworkStatus(isInteractive bool) error {

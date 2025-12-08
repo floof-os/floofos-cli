@@ -40,38 +40,38 @@ var interfacePrefixes = map[string]struct {
 }
 
 func IsFirstBoot() bool {
+	configFile := "/etc/vpp/config/vppcfg.vpp"
+
+	data, err := os.ReadFile(configFile)
+	if err != nil {
+		return true
+	}
+
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		return true
+	}
+
+	if strings.Contains(content, "lcp create") {
+		return false
+	}
+
+	return true
+}
+
+func waitVPPReady() bool {
 	for i := 0; i < 30; i++ {
-		output, err := exec.Command("vppctl", "show", "lcp").Output()
-		if err == nil {
-			lines := strings.Split(string(output), "\n")
-			lcpCount := 0
-			for _, line := range lines {
-				line = strings.TrimSpace(line)
-				if line != "" && !strings.HasPrefix(line, "itf") && !strings.HasPrefix(line, "---") {
-					lcpCount++
-				}
-			}
-			return lcpCount == 0
+		cmd := exec.Command("vppctl", "show", "version")
+		if err := cmd.Run(); err == nil {
+			return true
 		}
 		time.Sleep(1 * time.Second)
 	}
-	// VPP not responding after 30 seconds, skip wizard
 	return false
 }
 
 func getVPPInterfaces() []string {
-	var output []byte
-	var err error
-
-	// Retry up to 15 times with 1 second delay (15 seconds total)
-	for i := 0; i < 15; i++ {
-		output, err = exec.Command("vppctl", "show", "interface").Output()
-		if err == nil && len(output) > 0 {
-			break
-		}
-		time.Sleep(1 * time.Second)
-	}
-
+	output, err := exec.Command("vppctl", "show", "interface").Output()
 	if err != nil || len(output) == 0 {
 		return nil
 	}
@@ -146,6 +146,16 @@ func RunFirstBootSetup() error {
 	if !IsFirstBoot() {
 		return nil
 	}
+
+	fmt.Println()
+	fmt.Println("Waiting for VPP...")
+
+	if !waitVPPReady() {
+		fmt.Println("VPP not ready, skipping interface setup")
+		return nil
+	}
+
+	time.Sleep(2 * time.Second)
 
 	fmt.Println()
 	fmt.Println("Initial interface setup")
