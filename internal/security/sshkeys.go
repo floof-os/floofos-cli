@@ -105,9 +105,6 @@ func ListSSHKeys() (string, error) {
 		return "", fmt.Errorf("failed to read home directory: %w", err)
 	}
 
-	output.WriteString("SSH Public Keys:\n")
-	output.WriteString(strings.Repeat("=", 80) + "\n\n")
-
 	foundKeys := false
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -126,34 +123,29 @@ func ListSSHKeys() (string, error) {
 			continue
 		}
 
-		keys := strings.Split(string(data), "\n")
-		keyCount := 0
-		for _, key := range keys {
+		var validKeys []string
+		for _, key := range strings.Split(string(data), "\n") {
 			key = strings.TrimSpace(key)
 			if key != "" && !strings.HasPrefix(key, "#") {
-				keyCount++
+				validKeys = append(validKeys, key)
 			}
 		}
 
-		if keyCount > 0 {
-			output.WriteString(fmt.Sprintf("User: %s (%d key(s))\n", username, keyCount))
-			for i, key := range keys {
-				key = strings.TrimSpace(key)
-				if key != "" && !strings.HasPrefix(key, "#") {
-					keyPreview := key
-					if len(keyPreview) > 70 {
-						keyPreview = keyPreview[:70] + "..."
-					}
-					output.WriteString(fmt.Sprintf("  %d. %s\n", i+1, keyPreview))
+		if len(validKeys) > 0 {
+			output.WriteString(fmt.Sprintf("user %s:\n", username))
+			for i, key := range validKeys {
+				keyPreview := key
+				if len(keyPreview) > 70 {
+					keyPreview = keyPreview[:70] + "..."
 				}
+				output.WriteString(fmt.Sprintf("  %d. %s\n", i+1, keyPreview))
 			}
-			output.WriteString("\n")
 			foundKeys = true
 		}
 	}
 
 	if !foundKeys {
-		output.WriteString("No SSH keys configured\n")
+		output.WriteString("no ssh keys configured\n")
 	}
 
 	return output.String(), nil
@@ -207,9 +199,9 @@ func setPasswordAuth(enable bool) error {
 		return fmt.Errorf("failed to write sshd_config: %w", err)
 	}
 
-	cmd := exec.Command("systemctl", "reload", "sshd.service")
+	cmd := exec.Command("systemctl", "reload", "ssh-dataplane.service")
 	if output, err := cmd.CombinedOutput(); err != nil {
-		cmd = exec.Command("systemctl", "reload", "ssh.service")
+		cmd = exec.Command("systemctl", "restart", "ssh-dataplane.service")
 		if output2, err2 := cmd.CombinedOutput(); err2 != nil {
 			return fmt.Errorf("failed to reload SSH: %w\nOutput: %s / %s", err, output, output2)
 		}
@@ -229,13 +221,10 @@ func GetSSHConfig() (string, error) {
 	config := string(data)
 	lines := strings.Split(config, "\n")
 
-	output.WriteString("SSH Daemon Configuration:\n")
-	output.WriteString(strings.Repeat("=", 80) + "\n\n")
-
 	settings := map[string]string{
-		"PasswordAuthentication": "unknown",
-		"PubkeyAuthentication":   "unknown",
-		"PermitRootLogin":        "unknown",
+		"PasswordAuthentication": "yes",
+		"PubkeyAuthentication":   "yes",
+		"PermitRootLogin":        "prohibit-password",
 		"Port":                   "22",
 	}
 
@@ -255,19 +244,15 @@ func GetSSHConfig() (string, error) {
 		}
 	}
 
-	for key, value := range settings {
-		output.WriteString(fmt.Sprintf("  %-30s: %s\n", key, value))
-	}
+	output.WriteString(fmt.Sprintf("password-authentication: %s\n", settings["PasswordAuthentication"]))
+	output.WriteString(fmt.Sprintf("pubkey-authentication: %s\n", settings["PubkeyAuthentication"]))
+	output.WriteString(fmt.Sprintf("permit-root-login: %s\n", settings["PermitRootLogin"]))
+	output.WriteString(fmt.Sprintf("port: %s\n", settings["Port"]))
 
-	cmd := exec.Command("systemctl", "is-active", "sshd.service")
-	statusOutput, err := cmd.CombinedOutput()
-	if err != nil {
-		cmd = exec.Command("systemctl", "is-active", "ssh.service")
-		statusOutput, _ = cmd.CombinedOutput()
-	}
-
+	cmd := exec.Command("systemctl", "is-active", "ssh-dataplane.service")
+	statusOutput, _ := cmd.CombinedOutput()
 	status := strings.TrimSpace(string(statusOutput))
-	output.WriteString(fmt.Sprintf("\n  Service Status: %s\n", status))
+	output.WriteString(fmt.Sprintf("service: %s\n", status))
 
 	return output.String(), nil
 }
