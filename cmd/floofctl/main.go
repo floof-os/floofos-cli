@@ -695,7 +695,7 @@ func main() {
 	fmt.Println(white + " / _// / _ \\/ _ \\/ _// /_/ /\\ \\  " + reset)
 	fmt.Println(white + "/_/ /_/\\___/\\___/_/  \\____/___/  " + reset)
 	fmt.Println()
-	fmt.Println(white + "[Fast Line-rate Offload On Fabric OS]" + reset)
+	fmt.Println(white + "[ Fast Line-rate Offload On Fabric OS ]" + reset)
 	fmt.Println(white + "https://floofos.io | Copyright (c) 2025" + reset)
 	fmt.Println()
 	fmt.Println(yellow + "Type ? for context help" + reset)
@@ -1526,8 +1526,11 @@ func handleSystemCommands(line string, l *liner.State) {
 
 		fmt.Println("Rebooting system...")
 		auditLogInfo("System reboot initiated")
-		cmd := exec.Command("sudo", "reboot")
-		cmd.Run()
+		cmd := exec.Command("systemctl", "reboot")
+		if err := cmd.Run(); err != nil {
+			cmd = exec.Command("reboot")
+			cmd.Run()
+		}
 		return
 	}
 

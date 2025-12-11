@@ -223,7 +223,7 @@ func RunFirstBootSetup() error {
 		fmt.Printf("Configured %d interface(s)\n", success)
 	}
 	fmt.Println()
-	fmt.Println("Type 'commit' to save configuration")
+	fmt.Println("Enter 'configure' mode and type 'commit' to save configuration")
 	fmt.Println()
 
 	return nil

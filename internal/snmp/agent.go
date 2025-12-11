@@ -173,8 +173,7 @@ func GetSNMPStatus() (string, error) {
 func GetSNMPConfig() (string, error) {
 	var output strings.Builder
 
-	output.WriteString("SNMP Configuration:\n")
-	output.WriteString(strings.Repeat("=", 80) + "\n\n")
+	output.WriteString("SNMP Configuration:\n\n")
 
 	data, err := os.ReadFile(snmpdConfigFile)
 	if err != nil {
@@ -198,17 +197,6 @@ func GetSNMPConfig() (string, error) {
 		}
 	}
 
-	serviceFile := "/etc/systemd/system/vpp-snmp-agent.service"
-	if serviceData, err := os.ReadFile(serviceFile); err == nil {
-		for _, line := range strings.Split(string(serviceData), "\n") {
-			if strings.HasPrefix(line, "ExecStart=") {
-				output.WriteString("\nvpp-snmp-agent command:\n")
-				output.WriteString(fmt.Sprintf("  %s\n", strings.TrimPrefix(line, "ExecStart=")))
-				break
-			}
-		}
-	}
-
 	return output.String(), nil
 }
 
@@ -217,7 +205,7 @@ func SetCommunity(community string) error {
 		return fmt.Errorf("community string cannot be empty")
 	}
 
-	return updateSNMPDConfigLine("rocommunity", fmt.Sprintf("rocommunity %s default -V systemonly", community))
+	return updateSNMPDConfigLine("rocommunity", fmt.Sprintf("rocommunity %s default", community))
 }
 
 func SetLocation(location string) error {

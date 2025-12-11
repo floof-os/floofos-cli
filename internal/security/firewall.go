@@ -116,9 +116,9 @@ table inet floofos {
 		}
 	}
 
-	loadCmd := exec.Command("ip", "netns", "exec", "dataplane", "nft", "-f", floofosRulesFile)
+	loadCmd := exec.Command("nft", "-f", floofosRulesFile)
 	if output, err := loadCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to load rules in dataplane: %w\nOutput: %s", err, output)
+		return fmt.Errorf("failed to load firewall rules: %w\nOutput: %s", err, output)
 	}
 
 	exec.Command("systemctl", "unmask", nftablesDataplaneService).Run()
@@ -138,7 +138,7 @@ table inet floofos {
 }
 
 func DisableFirewall() error {
-	flushCmd := exec.Command("ip", "netns", "exec", "dataplane", "nft", "flush", "ruleset")
+	flushCmd := exec.Command("nft", "flush", "ruleset")
 	flushCmd.Run()
 
 	stopCmd := exec.Command("systemctl", "stop", nftablesDataplaneService)
@@ -200,17 +200,7 @@ func GetFirewallStatus() (string, error) {
 	output.WriteString(fmt.Sprintf("Rules: %d active (%d accept, %d drop)\n", acceptCount+dropCount, acceptCount, dropCount))
 	output.WriteString(fmt.Sprintf("Last modified: %s\n", lastModified))
 
-	checkDataplane := exec.Command("ip", "netns", "list")
-	if dataplaneOutput, err := checkDataplane.CombinedOutput(); err == nil {
-		if strings.Contains(string(dataplaneOutput), "dataplane") {
-			dataplaneCheck := exec.Command("ip", "netns", "exec", "dataplane", "nft", "list", "table", "inet", "floofos")
-			if _, err := dataplaneCheck.CombinedOutput(); err == nil {
-				output.WriteString("Dataplane namespace: protected\n")
-			} else {
-				output.WriteString("Dataplane namespace: not protected (run 'set security firewall enable' to fix)\n")
-			}
-		}
-	}
+	output.WriteString("Control plane: protected\n")
 
 	return output.String(), nil
 }
