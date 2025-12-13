@@ -87,12 +87,12 @@ func (r *Readline) Readline() (string, error) {
 	r.historyIndex = len(r.history)
 	tempLine := ""
 
-	buf := make([]byte, 3)
+	buf := make([]byte, 4)
 
 	for {
 		n, err := os.Stdin.Read(buf[:1])
 		if err != nil || n == 0 {
-			fmt.Println()
+			fmt.Print("\r\n")
 			return string(line), err
 		}
 
@@ -101,7 +101,7 @@ func (r *Readline) Readline() (string, error) {
 		switch char {
 		case '?':
 			fmt.Print("?")
-			fmt.Println()
+			fmt.Print("\r\n")
 
 			term.Restore(r.fd, oldState)
 
@@ -117,7 +117,7 @@ func (r *Readline) Readline() (string, error) {
 			pos = len(line)
 
 		case 13, 10:
-			fmt.Println()
+			fmt.Print("\r\n")
 			result := string(line)
 			r.AddHistory(result)
 			return result, nil
@@ -131,12 +131,12 @@ func (r *Readline) Readline() (string, error) {
 			}
 
 		case 3:
-			fmt.Println("^C")
+			fmt.Print("^C\r\n")
 			return "", nil
 
 		case 4:
 			if len(line) == 0 {
-				fmt.Println()
+				fmt.Print("\r\n")
 				return "", fmt.Errorf("EOF")
 			}
 
@@ -144,27 +144,61 @@ func (r *Readline) Readline() (string, error) {
 			if r.onComplete != nil {
 				currentLine := string(line)
 				completions := r.onComplete(currentLine)
+
+				if len(completions) == 0 {
+					continue
+				}
+
 				if len(completions) == 1 {
 					completion := completions[0]
-					if !strings.HasPrefix(completion, currentLine) {
+					words := strings.Fields(currentLine)
+
+					if len(words) == 0 {
+						line = []byte(completion + " ")
+						pos = len(line)
+						r.redrawLine(line, pos)
+					} else {
+						lastWord := words[len(words)-1]
+						endsWithSpace := len(currentLine) > 0 && currentLine[len(currentLine)-1] == ' '
+
+						if endsWithSpace {
+							line = append(line, []byte(completion+" ")...)
+							pos = len(line)
+							r.redrawLine(line, pos)
+						} else if strings.HasPrefix(strings.ToLower(completion), strings.ToLower(lastWord)) {
+							toAdd := completion[len(lastWord):]
+							line = append(line, []byte(toAdd+" ")...)
+							pos = len(line)
+							r.redrawLine(line, pos)
+						} else {
+							line = append(line, []byte(" "+completion+" ")...)
+							pos = len(line)
+							r.redrawLine(line, pos)
+						}
+					}
+				} else {
+					fmt.Print("\r\n")
+					for _, c := range completions {
+						fmt.Print("  " + c + "\r\n")
+					}
+					fmt.Print(r.prompt)
+					fmt.Print(string(line))
+					pos = len(line)
+
+					commonPrefix := findCommonPrefix(completions)
+					if commonPrefix != "" {
 						words := strings.Fields(currentLine)
 						if len(words) > 0 {
 							lastWord := words[len(words)-1]
-							if strings.HasPrefix(completion, lastWord) {
-								toAdd := completion[len(lastWord):]
-								line = append(line, []byte(toAdd+" ")...)
+							endsWithSpace := len(currentLine) > 0 && currentLine[len(currentLine)-1] == ' '
+							if !endsWithSpace && strings.HasPrefix(strings.ToLower(commonPrefix), strings.ToLower(lastWord)) && len(commonPrefix) > len(lastWord) {
+								toAdd := commonPrefix[len(lastWord):]
+								line = append(line, []byte(toAdd)...)
 								pos = len(line)
 								r.redrawLine(line, pos)
 							}
 						}
 					}
-				} else if len(completions) > 1 {
-					fmt.Println()
-					for _, c := range completions {
-						fmt.Printf("  %s\n", c)
-					}
-					fmt.Print(r.prompt)
-					fmt.Print(string(line))
 				}
 			}
 
@@ -230,8 +264,11 @@ func (r *Readline) Readline() (string, error) {
 					pos++
 					fmt.Print(string(char))
 				} else {
-					line = append(line[:pos+1], line[pos:]...)
-					line[pos] = char
+					newLine := make([]byte, len(line)+1)
+					copy(newLine, line[:pos])
+					newLine[pos] = char
+					copy(newLine[pos+1:], line[pos:])
+					line = newLine
 					pos++
 					r.redrawLine(line, pos)
 				}
@@ -253,4 +290,21 @@ func (r *Readline) Close() {
 	if r.termState != nil {
 		term.Restore(r.fd, r.termState)
 	}
+}
+
+func findCommonPrefix(strs []string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	if len(strs) == 1 {
+		return strs[0]
+	}
+
+	prefix := strs[0]
+	for _, s := range strs[1:] {
+		for len(prefix) > 0 && !strings.HasPrefix(strings.ToLower(s), strings.ToLower(prefix)) {
+			prefix = prefix[:len(prefix)-1]
+		}
+	}
+	return prefix
 }
