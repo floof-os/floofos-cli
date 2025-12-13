@@ -23,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/floof-os/floofos-cli/internal/readline"
 	"github.com/floof-os/floofos-cli/internal/security"
 	"github.com/floof-os/floofos-cli/internal/snmp"
 	"github.com/floof-os/floofos-cli/internal/system"
@@ -31,6 +32,8 @@ import (
 	"github.com/peterh/liner"
 	"golang.org/x/term"
 )
+
+const useInstantHelp = true
 
 type Mode int
 
@@ -292,6 +295,7 @@ var completionTree = map[string][]string{
 	"show system": {
 		"time",
 		"logging",
+		"commit",
 	},
 	"show system logging": {
 		"last",
@@ -441,6 +445,9 @@ var completionTree = map[string][]string{
 		"enable",
 		"disable",
 		"rule",
+	},
+	"set security firewall rule": {
+		"<name>",
 	},
 	"set security fail2ban": {
 		"enable",
@@ -705,6 +712,11 @@ func main() {
 		fmt.Printf("Warning: First boot setup error: %v\n", err)
 	}
 
+	if useInstantHelp {
+		runWithInstantHelp()
+		return
+	}
+
 	line := liner.NewLiner()
 	defer line.Close()
 
@@ -770,6 +782,144 @@ func main() {
 	}
 
 	line.Close()
+}
+
+func runWithInstantHelp() {
+	rl := readline.New()
+	defer rl.Close()
+
+	rl.SetHelpHandler(func(line string) {
+		showHelp(line + " ?")
+	})
+
+	rl.SetCompleteHandler(func(line string) []string {
+		return completer(line)
+	})
+
+	for {
+		rl.SetPrompt(getPrompt())
+
+		input, err := rl.Readline()
+		if err != nil {
+			if err.Error() == "EOF" {
+				fmt.Println()
+				break
+			}
+			continue
+		}
+
+		input = strings.TrimSpace(input)
+
+		if input == "" {
+			continue
+		}
+
+		if strings.HasSuffix(input, " ?") || input == "?" {
+			continue
+		}
+
+		auditLogCmd(redactPassword(input))
+
+		needRestart := processCommandInstantHelp(input)
+		if needRestart {
+			continue
+		}
+	}
+}
+
+func processCommandInstantHelp(input string) bool {
+	args := strings.Fields(input)
+	if len(args) == 0 {
+		return false
+	}
+
+	cmd := strings.ToLower(args[0])
+
+	if cmd == "exit" || cmd == "end" || cmd == "quit" {
+		if currentMode == ConfigurationMode {
+			currentMode = OperationalMode
+			fmt.Println("Exiting configuration mode")
+			return false
+		}
+		if currentUser != nil && currentUser.Username == "root" {
+			fmt.Print("Exit to shell? (Y/N): ")
+			reader := bufio.NewReader(os.Stdin)
+			response, _ := reader.ReadString('\n')
+			response = strings.TrimSpace(strings.ToUpper(response))
+			if response == "Y" || response == "YES" {
+				fmt.Println("Exiting FloofCTL CLI")
+				auditLogInfo("Logged out")
+				os.Exit(0)
+			}
+			return false
+		}
+		fmt.Println("Non-root users cannot exit to shell")
+		return false
+	}
+
+	if cmd == "configure" || cmd == "conf" || cmd == "config" {
+		if currentMode == OperationalMode {
+			currentMode = ConfigurationMode
+			fmt.Println("Entering configuration mode")
+		}
+		return false
+	}
+
+	if cmd == "system" && len(args) >= 2 && args[1] == "install" {
+		if currentMode == OperationalMode {
+			fmt.Println("Error: Enter configuration mode first")
+			return false
+		}
+		if currentUser != nil && currentUser.Privilege < PrivilegeAdmin {
+			fmt.Println("Error: Admin privilege required")
+			return false
+		}
+		err := system.RunInstall()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+		}
+		return true
+	}
+
+	if cmd == "system" && len(args) >= 2 && args[1] == "reboot" {
+		fmt.Print("Reboot system? (Y/N): ")
+		reader := bufio.NewReader(os.Stdin)
+		response, _ := reader.ReadString('\n')
+		response = strings.TrimSpace(strings.ToUpper(response))
+		if response == "Y" || response == "YES" {
+			fmt.Println("Rebooting...")
+			exec.Command("systemctl", "reboot").Run()
+		}
+		return false
+	}
+
+	if currentMode == OperationalMode && cmd != "show" && cmd != "configure" && cmd != "help" && cmd != "ping" && cmd != "traceroute" && cmd != "system" {
+		fmt.Println("Error: Only 'show' commands allowed in operational mode")
+		return false
+	}
+
+	if cmd == "ping" {
+		executePing(args)
+		return false
+	}
+
+	if cmd == "traceroute" {
+		executeTraceroute(args)
+		return false
+	}
+
+	if cmd == "help" {
+		showHelp("")
+		return false
+	}
+
+	line := strings.Join(args, " ")
+	if isFloofOSCommand(line) {
+		executeFloofOS(line)
+	} else {
+		executeVPP(args)
+	}
+	return false
 }
 
 func completer(line string) []string {
@@ -1573,20 +1723,27 @@ func handleSystemCommands(line string, l *liner.State) {
 		timezone := strings.Join(args[3:], " ")
 
 		fmt.Printf("Setting timezone to: %s\n", timezone)
-		cmd := exec.Command("sudo", "timedatectl", "set-timezone", timezone)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			fmt.Printf("Error setting timezone: %v\n", err)
-			if len(output) > 0 {
-				fmt.Print(string(output))
-			}
-			fmt.Println("\nTip: Use format like 'Asia/Singapore' or 'UTC'")
-			fmt.Println("List zones: timedatectl list-timezones")
-		} else {
-			fmt.Printf("Timezone set to %s successfully\n", timezone)
-			hasUnsavedChanges = true
-			auditLogConfig(fmt.Sprintf("Set timezone to %s", timezone))
+
+		zoneFile := "/usr/share/zoneinfo/" + timezone
+		if _, err := os.Stat(zoneFile); os.IsNotExist(err) {
+			fmt.Printf("Error: Invalid timezone '%s'\n", timezone)
+			fmt.Println("Tip: Use format like 'Asia/Jakarta' or 'UTC'")
+			return
 		}
+
+		cmd := exec.Command("timedatectl", "set-timezone", timezone)
+		if _, err := cmd.CombinedOutput(); err != nil {
+			os.Remove("/etc/localtime")
+			linkCmd := exec.Command("ln", "-sf", zoneFile, "/etc/localtime")
+			if linkErr := linkCmd.Run(); linkErr != nil {
+				fmt.Printf("Error setting timezone: %v\n", linkErr)
+				return
+			}
+			os.WriteFile("/etc/timezone", []byte(timezone+"\n"), 0644)
+		}
+		fmt.Printf("Timezone set to %s\n", timezone)
+		hasUnsavedChanges = true
+		auditLogConfig(fmt.Sprintf("Set timezone to %s", timezone))
 		return
 	}
 
@@ -1942,7 +2099,11 @@ func executeFloofOS(line string) {
 				if args[3] == "enable" {
 					setLogGlobalEnable()
 				} else if args[3] == "disable" {
-					setLogGlobalDisable()
+					if len(args) >= 5 && args[4] == "confirm" {
+						setLogGlobalDisableConfirmed()
+					} else {
+						setLogGlobalDisable()
+					}
 				} else {
 					fmt.Println("Usage: set all logging <enable|disable>")
 				}
@@ -2021,6 +2182,10 @@ func executeFloofOS(line string) {
 			showAllBackups()
 		} else if len(args) >= 3 && args[1] == "system" && args[2] == "logging" {
 			showSystemLog(args[3:])
+		} else if len(args) >= 3 && args[1] == "system" && args[2] == "commit" {
+			showSystemLog([]string{"commit"})
+		} else if len(args) >= 3 && args[1] == "system" && args[2] == "time" {
+			showSystemTime()
 		} else if len(args) >= 2 && args[1] == "system" {
 			showSystem()
 		} else if len(args) >= 2 && args[1] == "resource" {
@@ -2673,17 +2838,25 @@ func showSystem() {
 	fmt.Println()
 
 	floofVersion := "Unknown"
-	bannerData, err := os.ReadFile("/etc/profile.d/floof-banner.sh")
+	osReleaseData, err := os.ReadFile("/etc/os-release")
 	if err == nil {
-		lines := strings.Split(string(bannerData), "\n")
+		lines := strings.Split(string(osReleaseData), "\n")
 		for _, line := range lines {
-			if strings.Contains(line, "version:") {
-				parts := strings.Split(line, "version:")
-				if len(parts) > 1 {
-					floofVersion = strings.TrimSpace(strings.Trim(parts[1], "\""))
-				}
+			if strings.HasPrefix(line, "VERSION=") {
+				floofVersion = strings.Trim(strings.TrimPrefix(line, "VERSION="), "\"")
 				break
+			} else if strings.HasPrefix(line, "PRETTY_NAME=") {
+				name := strings.Trim(strings.TrimPrefix(line, "PRETTY_NAME="), "\"")
+				if strings.Contains(name, "FloofOS") {
+					floofVersion = name
+				}
 			}
+		}
+	}
+	if floofVersion == "Unknown" {
+		lsbCmd := exec.Command("lsb_release", "-d", "-s")
+		if lsbOutput, err := lsbCmd.Output(); err == nil {
+			floofVersion = strings.TrimSpace(string(lsbOutput))
 		}
 	}
 
@@ -2767,6 +2940,51 @@ func showSystem() {
 	fmt.Printf("VPP:                  %s\n", vppVersion)
 	fmt.Printf("BIRD:                 %s\n", birdVersion)
 	fmt.Printf("Pathvector:           %s\n", pvVersion)
+	fmt.Println()
+}
+
+func showSystemTime() {
+	fmt.Println()
+	fmt.Println("System Time")
+	fmt.Println()
+
+	cmd := exec.Command("timedatectl", "show")
+	output, err := cmd.Output()
+	if err == nil {
+		lines := strings.Split(string(output), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "Timezone=") {
+				fmt.Printf("Timezone:    %s\n", strings.TrimPrefix(line, "Timezone="))
+			} else if strings.HasPrefix(line, "LocalRTC=") {
+				fmt.Printf("Local RTC:   %s\n", strings.TrimPrefix(line, "LocalRTC="))
+			} else if strings.HasPrefix(line, "NTP=") {
+				val := strings.TrimPrefix(line, "NTP=")
+				if val == "yes" {
+					fmt.Println("NTP:         enabled")
+				} else {
+					fmt.Println("NTP:         disabled")
+				}
+			} else if strings.HasPrefix(line, "NTPSynchronized=") {
+				val := strings.TrimPrefix(line, "NTPSynchronized=")
+				if val == "yes" {
+					fmt.Println("NTP Sync:    synchronized")
+				} else {
+					fmt.Println("NTP Sync:    not synchronized")
+				}
+			}
+		}
+	}
+
+	dateCmd := exec.Command("date", "+%Y-%m-%d %H:%M:%S %Z")
+	if dateOutput, err := dateCmd.Output(); err == nil {
+		fmt.Printf("Current:     %s", string(dateOutput))
+	}
+
+	tzData, _ := os.ReadFile("/etc/timezone")
+	if len(tzData) > 0 {
+		fmt.Printf("Zone file:   %s", string(tzData))
+	}
+
 	fmt.Println()
 }
 
@@ -3046,22 +3264,25 @@ func printWithPager(output string) {
 
 func showTracerouteHelp() {
 	help := `
-traceroute - Trace route to destination with ASN information
+traceroute - Trace route to destination
 
 Usage:
-  traceroute <address>              Trace route to destination
-  traceroute <address> source <ip>  Use specific source IP address
+  traceroute <address>                      Trace route to destination
+  traceroute <address> asn                  Include ASN information
+  traceroute <address> source <ip>          Use specific source IP
+  traceroute <address> interface <ifname>   Use specific interface
 
 Options:
-  <address>      Destination IP address or hostname
-  source <ip>    Source IP address to use
+  <address>       Destination IP address or hostname
+  asn             Show AS (Autonomous System) for each hop
+  source <ip>     Source IP address to use
+  interface <if>  Source interface to use
 
 Examples:
   traceroute 1.1.1.1
+  traceroute 8.8.8.8 asn
   traceroute 8.8.8.8 source 10.0.0.1
-  traceroute cloudflare.com
-
-Note: Shows AS (Autonomous System) number for each hop
+  traceroute cloudflare.com interface ge0
 `
 	printWithPager(help)
 }
@@ -3080,28 +3301,49 @@ func executePing(args []string) {
 func executeTraceroute(args []string) {
 	if len(args) < 2 {
 		fmt.Println("Error: Missing destination address")
-		fmt.Println("Usage: traceroute <address> [source <ip>]")
+		fmt.Println("Usage: traceroute <address> [asn] [source <ip>] [interface <if>]")
 		fmt.Println("Type 'traceroute ?' for help")
 		return
 	}
 
-	var cmdArgs []string
-	var sourceIP string
-
 	destination := args[1]
+	var sourceIP string
+	var sourceInterface string
+	showASN := false
 
 	for i := 2; i < len(args); i++ {
-		if args[i] == "source" && i+1 < len(args) {
-			sourceIP = args[i+1]
-			i++
+		switch args[i] {
+		case "asn":
+			showASN = true
+		case "source":
+			if i+1 < len(args) {
+				sourceIP = args[i+1]
+				i++
+			}
+		case "interface":
+			if i+1 < len(args) {
+				sourceInterface = args[i+1]
+				i++
+			}
 		}
 	}
 
-	if sourceIP != "" {
-		cmdArgs = []string{"-A", "-s", sourceIP, "-n", destination}
-	} else {
-		cmdArgs = []string{"-A", "-n", destination}
+	var cmdArgs []string
+	cmdArgs = append(cmdArgs, "-n")
+
+	if showASN {
+		cmdArgs = append(cmdArgs, "-A")
 	}
+
+	if sourceIP != "" {
+		cmdArgs = append(cmdArgs, "-s", sourceIP)
+	}
+
+	if sourceInterface != "" {
+		cmdArgs = append(cmdArgs, "-i", sourceInterface)
+	}
+
+	cmdArgs = append(cmdArgs, destination)
 
 	cmd := exec.Command("traceroute", cmdArgs...)
 	cmd.Stdout = os.Stdout
@@ -3543,16 +3785,10 @@ func setLogGlobalDisable() {
 	fmt.Println("  - BGP routing logs will stop")
 	fmt.Println("  - Critical events will not be recorded")
 	fmt.Println()
-	fmt.Print("Continue? (yes/no): ")
+	fmt.Println("To proceed, run: set all logging disable confirm")
+}
 
-	reader := bufio.NewReader(os.Stdin)
-	response, _ := reader.ReadString('\n')
-	response = strings.TrimSpace(strings.ToLower(response))
-
-	if response != "yes" {
-		fmt.Println("Operation cancelled")
-		return
-	}
+func setLogGlobalDisableConfirmed() {
 
 	cmd := exec.Command("systemctl", "stop", "rsyslog")
 	cmd.Run()
@@ -4297,18 +4533,35 @@ func handleSecuritySetCommands(args []string) {
 
 func handleSecurityShowCommands(args []string) {
 	if len(args) == 0 {
-		fmt.Println("Showing all security settings...")
+		fmt.Println()
+		fmt.Println("Security Status")
 		fmt.Println()
 
 		status, _ := security.GetFirewallStatus()
-		fmt.Printf("Firewall Status: %s\n\n", status)
+		fmt.Println("Firewall:")
+		for _, line := range strings.Split(status, "\n") {
+			if strings.TrimSpace(line) != "" {
+				fmt.Println("  " + line)
+			}
+		}
+		fmt.Println()
 
 		f2bStatus, _ := security.GetFail2banStatus()
-		fmt.Println("Fail2ban Status:")
-		fmt.Println(f2bStatus)
+		fmt.Println("Fail2ban:")
+		for _, line := range strings.Split(f2bStatus, "\n") {
+			if strings.TrimSpace(line) != "" {
+				fmt.Println("  " + line)
+			}
+		}
+		fmt.Println()
 
 		sshConfig, _ := security.GetSSHConfig()
-		fmt.Println(sshConfig)
+		fmt.Println("SSH:")
+		for _, line := range strings.Split(sshConfig, "\n") {
+			if strings.TrimSpace(line) != "" {
+				fmt.Println("  " + line)
+			}
+		}
 		return
 	}
 

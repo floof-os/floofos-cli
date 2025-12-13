@@ -260,13 +260,53 @@ func SetPollingInterval(interval int) error {
 }
 
 func GetStatistics() (string, error) {
-	cmd := exec.Command("snmpget", "-v2c", "-c", "public", "localhost", "SNMPv2-MIB::sysUpTime.0")
+	cmd := exec.Command("ip", "netns", "exec", "dataplane", "snmpwalk", "-v2c", "-c", "public", "-On", "localhost", "1.3.6.1.2.1.1")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to query SNMP: %w\nOutput: %s", err, output)
+		cmd2 := exec.Command("snmpwalk", "-v2c", "-c", "public", "-On", "localhost", "1.3.6.1.2.1.1")
+		output2, err2 := cmd2.CombinedOutput()
+		if err2 != nil {
+			return "", fmt.Errorf("SNMP not responding. Check if snmpd-dataplane is running")
+		}
+		output = output2
 	}
 
-	return string(output), nil
+	var result strings.Builder
+	result.WriteString("SNMP System Information:\n\n")
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if strings.Contains(line, "1.3.6.1.2.1.1.1") {
+			result.WriteString("  sysDescr: " + extractValue(line) + "\n")
+		} else if strings.Contains(line, "1.3.6.1.2.1.1.3") {
+			result.WriteString("  sysUpTime: " + extractValue(line) + "\n")
+		} else if strings.Contains(line, "1.3.6.1.2.1.1.4") {
+			result.WriteString("  sysContact: " + extractValue(line) + "\n")
+		} else if strings.Contains(line, "1.3.6.1.2.1.1.5") {
+			result.WriteString("  sysName: " + extractValue(line) + "\n")
+		} else if strings.Contains(line, "1.3.6.1.2.1.1.6") {
+			result.WriteString("  sysLocation: " + extractValue(line) + "\n")
+		}
+	}
+
+	return result.String(), nil
+}
+
+func extractValue(line string) string {
+	parts := strings.SplitN(line, "=", 2)
+	if len(parts) < 2 {
+		return line
+	}
+	value := strings.TrimSpace(parts[1])
+	if strings.HasPrefix(value, "STRING:") {
+		value = strings.TrimPrefix(value, "STRING:")
+	} else if strings.HasPrefix(value, "Timeticks:") {
+		value = strings.TrimPrefix(value, "Timeticks:")
+	}
+	return strings.TrimSpace(strings.Trim(value, "\""))
 }
 
 func updateSNMPDConfigLine(prefix, newLine string) error {

@@ -199,12 +199,9 @@ func setPasswordAuth(enable bool) error {
 		return fmt.Errorf("failed to write sshd_config: %w", err)
 	}
 
-	cmd := exec.Command("systemctl", "reload", "ssh-dataplane.service")
+	cmd := exec.Command("systemctl", "restart", "ssh-dataplane.service")
 	if output, err := cmd.CombinedOutput(); err != nil {
-		cmd = exec.Command("systemctl", "restart", "ssh-dataplane.service")
-		if output2, err2 := cmd.CombinedOutput(); err2 != nil {
-			return fmt.Errorf("failed to reload SSH: %w\nOutput: %s / %s", err, output, output2)
-		}
+		return fmt.Errorf("failed to restart SSH: %w\nOutput: %s", err, output)
 	}
 
 	return nil
