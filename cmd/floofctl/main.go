@@ -3281,18 +3281,6 @@ Usage:
   traceroute <address> asn                  Include ASN information
   traceroute <address> source <ip>          Use specific source IP
   traceroute <address> interface <ifname>   Use specific interface
-
-Options:
-  <address>       Destination IP address or hostname
-  asn             Show AS (Autonomous System) for each hop
-  source <ip>     Source IP address to use
-  interface <if>  Source interface to use
-
-Examples:
-  traceroute 1.1.1.1
-  traceroute 8.8.8.8 asn
-  traceroute 8.8.8.8 source 10.0.0.1
-  traceroute cloudflare.com interface ge0
 `
 	printWithPager(help)
 }
