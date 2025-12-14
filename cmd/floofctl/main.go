@@ -81,10 +81,9 @@ var commandAliases = map[string]string{
 	"conf":     "configure",
 	"config":   "configure",
 	"int":      "interface",
-	"lcp":      "linux-cp",
 	"adj":      "adjacency",
 	"sr":       "segment-routing",
-	"route":    "routes",
+	"route":    "route",
 	"backup":   "backups",
 	"protocol": "protocols",
 	"hardware": "hardware-interfaces",
@@ -196,7 +195,7 @@ var completionTree = map[string][]string{
 		"l2fwd",
 		"ethernet",
 		"protocols",
-		"routes",
+		"route",
 		"ospf",
 		"rip",
 		"static",
@@ -923,8 +922,30 @@ func processCommandInstantHelp(input string) bool {
 		return false
 	}
 
+	if len(args) >= 2 && args[0] == "show" && args[1] == "bgp" {
+		if len(args) >= 3 && args[2] == "logging" {
+			showBGPLog(args[3:])
+			return false
+		}
+		executePathvector(args[1:])
+		return false
+	}
+
 	line := strings.Join(args, " ")
-	if isFloofOSCommand(line) {
+
+	if cmd == "system" || (len(args) >= 3 && args[0] == "set" && args[1] == "system") || (len(args) >= 3 && args[0] == "show" && args[1] == "system" && args[2] == "time") {
+		handleSystemCommandsInstantHelp(line)
+		return false
+	}
+
+	if cmd == "dns" && len(args) >= 2 && args[1] == "name-server" {
+		handleDNSCommand(args)
+		return false
+	}
+
+	if isBIRDCommand(line) {
+		executeBIRD(args)
+	} else if isFloofOSCommand(line) {
 		executeFloofOS(line)
 	} else {
 		executeVPP(args)
@@ -1691,6 +1712,147 @@ func handleSystemCommands(line string, l *liner.State) {
 			cmd = exec.Command("reboot")
 			cmd.Run()
 		}
+		return
+	}
+
+	if len(args) >= 3 && args[0] == "show" && args[1] == "system" && args[2] == "time" {
+		cmd := exec.Command("date", "+%Y-%m-%d %H:%M:%S %Z")
+		output, err := cmd.CombinedOutput()
+		if err == nil {
+			fmt.Printf("Current time: %s", string(output))
+		}
+
+		cmd = exec.Command("timedatectl", "show", "-p", "Timezone", "--value")
+		output, err = cmd.CombinedOutput()
+		if err == nil {
+			fmt.Printf("Timezone:     %s", string(output))
+		}
+
+		cmd = exec.Command("timedatectl", "show", "-p", "NTP", "--value")
+		output, _ = cmd.CombinedOutput()
+		ntpEnabled := strings.TrimSpace(string(output)) == "yes"
+
+		fmt.Printf("NTP sync:     %s\n", map[bool]string{true: "enabled", false: "disabled"}[ntpEnabled])
+
+		cmd = exec.Command("timedatectl", "show", "-p", "NTPSynchronized", "--value")
+		output, _ = cmd.CombinedOutput()
+		ntpSynced := strings.TrimSpace(string(output)) == "yes"
+
+		fmt.Printf("NTP status:   %s\n", map[bool]string{true: "synchronized", false: "not synchronized"}[ntpSynced])
+
+		cmd = exec.Command("chronyc", "sources")
+		output, err = cmd.CombinedOutput()
+		if err == nil && len(output) > 0 {
+			fmt.Printf("\nNTP servers:\n%s", string(output))
+		}
+
+		fmt.Println()
+		return
+	}
+
+	if len(args) >= 4 && args[0] == "set" && args[1] == "system" && args[2] == "time-zone" {
+		timezone := strings.Join(args[3:], " ")
+
+		fmt.Printf("Setting timezone to: %s\n", timezone)
+
+		zoneFile := "/usr/share/zoneinfo/" + timezone
+		if _, err := os.Stat(zoneFile); os.IsNotExist(err) {
+			fmt.Printf("Error: Invalid timezone '%s'\n", timezone)
+			fmt.Println("Tip: Use format like 'Asia/Jakarta' or 'UTC'")
+			return
+		}
+
+		cmd := exec.Command("timedatectl", "set-timezone", timezone)
+		if _, err := cmd.CombinedOutput(); err != nil {
+			os.Remove("/etc/localtime")
+			linkCmd := exec.Command("ln", "-sf", zoneFile, "/etc/localtime")
+			if linkErr := linkCmd.Run(); linkErr != nil {
+				fmt.Printf("Error setting timezone: %v\n", linkErr)
+				return
+			}
+			os.WriteFile("/etc/timezone", []byte(timezone+"\n"), 0644)
+		}
+		fmt.Printf("Timezone set to %s\n", timezone)
+		hasUnsavedChanges = true
+		auditLogConfig(fmt.Sprintf("Set timezone to %s", timezone))
+		return
+	}
+
+	if len(args) >= 5 && args[0] == "set" && args[1] == "system" && args[2] == "ntp" && args[3] == "server" {
+		ntpServer := args[4]
+
+		chronyConf := "/etc/chrony/chrony.conf"
+
+		data, err := os.ReadFile(chronyConf)
+		if err != nil {
+			fmt.Printf("Error reading chrony config: %v\n", err)
+			return
+		}
+
+		content := string(data)
+
+		if strings.Contains(content, "server "+ntpServer) {
+			fmt.Printf("NTP server %s already configured\n", ntpServer)
+			return
+		}
+
+		newLine := fmt.Sprintf("server %s iburst\n", ntpServer)
+		content += newLine
+
+		err = os.WriteFile(chronyConf, []byte(content), 0644)
+		if err != nil {
+			fmt.Printf("Error writing chrony config: %v\n", err)
+			return
+		}
+
+		fmt.Println("Restarting chrony service...")
+		cmd := exec.Command("sudo", "systemctl", "restart", "chrony")
+		err = cmd.Run()
+		if err != nil {
+			fmt.Printf("Error restarting chrony: %v\n", err)
+		} else {
+			fmt.Printf("NTP server %s added successfully\n", ntpServer)
+			hasUnsavedChanges = true
+			auditLogConfig(fmt.Sprintf("Added NTP server %s", ntpServer))
+		}
+
+		cmd = exec.Command("sudo", "timedatectl", "set-ntp", "true")
+		cmd.Run()
+
+		return
+	}
+
+	if len(args) >= 4 && args[0] == "set" && args[1] == "system" && args[2] == "clock" {
+		datetime := strings.Join(args[3:], " ")
+
+		fmt.Printf("Setting system clock to: %s\n", datetime)
+
+		cmd := exec.Command("sudo", "timedatectl", "set-ntp", "false")
+		cmd.Run()
+
+		cmd = exec.Command("sudo", "timedatectl", "set-time", datetime)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			fmt.Printf("Error setting time: %v\n", err)
+			if len(output) > 0 {
+				fmt.Print(string(output))
+			}
+			fmt.Println("\nFormat: YYYY-MM-DD HH:MM:SS (e.g., 2025-11-15 14:30:00)")
+		} else {
+			fmt.Println("System clock set successfully")
+			fmt.Println("Note: NTP sync disabled (use 'set system ntp server' to re-enable)")
+			hasUnsavedChanges = true
+			auditLogConfig(fmt.Sprintf("Set system clock to %s", datetime))
+		}
+		return
+	}
+
+	fmt.Println("Unknown system command")
+}
+
+func handleSystemCommandsInstantHelp(line string) {
+	args := strings.Fields(line)
+	if len(args) == 0 {
 		return
 	}
 
@@ -3281,6 +3443,18 @@ Usage:
   traceroute <address> asn                  Include ASN information
   traceroute <address> source <ip>          Use specific source IP
   traceroute <address> interface <ifname>   Use specific interface
+
+Options:
+  <address>       Destination IP address or hostname
+  asn             Show AS (Autonomous System) for each hop
+  source <ip>     Source IP address to use
+  interface <if>  Source interface to use
+
+Examples:
+  traceroute 1.1.1.1
+  traceroute 8.8.8.8 asn
+  traceroute 8.8.8.8 source 10.0.0.1
+  traceroute cloudflare.com interface ge0
 `
 	printWithPager(help)
 }
