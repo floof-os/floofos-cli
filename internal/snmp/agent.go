@@ -260,10 +260,10 @@ func SetPollingInterval(interval int) error {
 }
 
 func GetStatistics() (string, error) {
-	cmd := exec.Command("ip", "netns", "exec", "dataplane", "snmpwalk", "-v2c", "-c", "public", "-On", "localhost", "1.3.6.1.2.1.1")
+	cmd := exec.Command("ip", "netns", "exec", "dataplane", "snmpwalk", "-v2c", "-c", "public", "-On", "localhost", "1.3.6.1.2.1.11")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		cmd2 := exec.Command("snmpwalk", "-v2c", "-c", "public", "-On", "localhost", "1.3.6.1.2.1.1")
+		cmd2 := exec.Command("snmpwalk", "-v2c", "-c", "public", "-On", "localhost", "1.3.6.1.2.1.11")
 		output2, err2 := cmd2.CombinedOutput()
 		if err2 != nil {
 			return "", fmt.Errorf("SNMP not responding. Check if snmpd-dataplane is running")
@@ -272,23 +272,52 @@ func GetStatistics() (string, error) {
 	}
 
 	var result strings.Builder
-	result.WriteString("SNMP System Information:\n\n")
+	result.WriteString("SNMP Statistics:\n\n")
+
+	stats := map[string]string{
+		"1.3.6.1.2.1.11.1":  "snmpInPkts",
+		"1.3.6.1.2.1.11.2":  "snmpOutPkts",
+		"1.3.6.1.2.1.11.3":  "snmpInBadVersions",
+		"1.3.6.1.2.1.11.4":  "snmpInBadCommunityNames",
+		"1.3.6.1.2.1.11.5":  "snmpInBadCommunityUses",
+		"1.3.6.1.2.1.11.6":  "snmpInASNParseErrs",
+		"1.3.6.1.2.1.11.8":  "snmpInTooBigs",
+		"1.3.6.1.2.1.11.9":  "snmpInNoSuchNames",
+		"1.3.6.1.2.1.11.10": "snmpInBadValues",
+		"1.3.6.1.2.1.11.11": "snmpInReadOnlys",
+		"1.3.6.1.2.1.11.12": "snmpInGenErrs",
+		"1.3.6.1.2.1.11.13": "snmpInTotalReqVars",
+		"1.3.6.1.2.1.11.14": "snmpInTotalSetVars",
+		"1.3.6.1.2.1.11.15": "snmpInGetRequests",
+		"1.3.6.1.2.1.11.16": "snmpInGetNexts",
+		"1.3.6.1.2.1.11.17": "snmpInSetRequests",
+		"1.3.6.1.2.1.11.18": "snmpInGetResponses",
+		"1.3.6.1.2.1.11.19": "snmpInTraps",
+		"1.3.6.1.2.1.11.20": "snmpOutTooBigs",
+		"1.3.6.1.2.1.11.21": "snmpOutNoSuchNames",
+		"1.3.6.1.2.1.11.22": "snmpOutBadValues",
+		"1.3.6.1.2.1.11.24": "snmpOutGenErrs",
+		"1.3.6.1.2.1.11.25": "snmpOutGetRequests",
+		"1.3.6.1.2.1.11.26": "snmpOutGetNexts",
+		"1.3.6.1.2.1.11.27": "snmpOutSetRequests",
+		"1.3.6.1.2.1.11.28": "snmpOutGetResponses",
+		"1.3.6.1.2.1.11.29": "snmpOutTraps",
+		"1.3.6.1.2.1.11.30": "snmpEnableAuthenTraps",
+		"1.3.6.1.2.1.11.31": "snmpSilentDrops",
+		"1.3.6.1.2.1.11.32": "snmpProxyDrops",
+	}
 
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		if strings.Contains(line, "1.3.6.1.2.1.1.1") {
-			result.WriteString("  sysDescr: " + extractValue(line) + "\n")
-		} else if strings.Contains(line, "1.3.6.1.2.1.1.3") {
-			result.WriteString("  sysUpTime: " + extractValue(line) + "\n")
-		} else if strings.Contains(line, "1.3.6.1.2.1.1.4") {
-			result.WriteString("  sysContact: " + extractValue(line) + "\n")
-		} else if strings.Contains(line, "1.3.6.1.2.1.1.5") {
-			result.WriteString("  sysName: " + extractValue(line) + "\n")
-		} else if strings.Contains(line, "1.3.6.1.2.1.1.6") {
-			result.WriteString("  sysLocation: " + extractValue(line) + "\n")
+		for oid, name := range stats {
+			if strings.Contains(line, oid+".0") || strings.HasPrefix(line, "."+oid+".0") {
+				value := extractValue(line)
+				result.WriteString(fmt.Sprintf("  %-28s %s\n", name+":", value))
+				break
+			}
 		}
 	}
 
