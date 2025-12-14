@@ -150,30 +150,44 @@ func (r *Readline) Readline() (string, error) {
 				}
 
 				if len(completions) == 1 {
-					completion := completions[0]
-					words := strings.Fields(currentLine)
+					completion := strings.TrimSpace(completions[0])
 
-					if len(words) == 0 {
-						line = []byte(completion + " ")
+					if strings.HasPrefix(strings.ToLower(completion), strings.ToLower(strings.TrimSpace(currentLine))) {
+						newLine := completion
+						if !strings.HasSuffix(newLine, " ") {
+							newLine += " "
+						}
+						line = []byte(newLine)
 						pos = len(line)
 						r.redrawLine(line, pos)
 					} else {
-						lastWord := words[len(words)-1]
-						endsWithSpace := len(currentLine) > 0 && currentLine[len(currentLine)-1] == ' '
-
-						if endsWithSpace {
-							line = append(line, []byte(completion+" ")...)
-							pos = len(line)
-							r.redrawLine(line, pos)
-						} else if strings.HasPrefix(strings.ToLower(completion), strings.ToLower(lastWord)) {
-							toAdd := completion[len(lastWord):]
-							line = append(line, []byte(toAdd+" ")...)
+						words := strings.Fields(currentLine)
+						if len(words) == 0 {
+							newLine := completion + " "
+							line = []byte(newLine)
 							pos = len(line)
 							r.redrawLine(line, pos)
 						} else {
-							line = append(line, []byte(" "+completion+" ")...)
-							pos = len(line)
-							r.redrawLine(line, pos)
+							lastWord := words[len(words)-1]
+							endsWithSpace := len(currentLine) > 0 && currentLine[len(currentLine)-1] == ' '
+
+							if endsWithSpace {
+								newLine := currentLine + completion + " "
+								line = []byte(newLine)
+								pos = len(line)
+								r.redrawLine(line, pos)
+							} else if strings.HasPrefix(strings.ToLower(completion), strings.ToLower(lastWord)) {
+								prefix := currentLine[:len(currentLine)-len(lastWord)]
+								newLine := prefix + completion + " "
+								line = []byte(newLine)
+								pos = len(line)
+								r.redrawLine(line, pos)
+							} else {
+								newLine := currentLine + " " + completion + " "
+								line = []byte(newLine)
+								pos = len(line)
+								r.redrawLine(line, pos)
+							}
 						}
 					}
 				} else {
@@ -186,17 +200,11 @@ func (r *Readline) Readline() (string, error) {
 					pos = len(line)
 
 					commonPrefix := findCommonPrefix(completions)
-					if commonPrefix != "" {
-						words := strings.Fields(currentLine)
-						if len(words) > 0 {
-							lastWord := words[len(words)-1]
-							endsWithSpace := len(currentLine) > 0 && currentLine[len(currentLine)-1] == ' '
-							if !endsWithSpace && strings.HasPrefix(strings.ToLower(commonPrefix), strings.ToLower(lastWord)) && len(commonPrefix) > len(lastWord) {
-								toAdd := commonPrefix[len(lastWord):]
-								line = append(line, []byte(toAdd)...)
-								pos = len(line)
-								r.redrawLine(line, pos)
-							}
+					if commonPrefix != "" && len(commonPrefix) > len(strings.TrimSpace(currentLine)) {
+						if strings.HasPrefix(strings.ToLower(commonPrefix), strings.ToLower(strings.TrimSpace(currentLine))) {
+							line = []byte(commonPrefix)
+							pos = len(line)
+							r.redrawLine(line, pos)
 						}
 					}
 				}
