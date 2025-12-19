@@ -30,6 +30,7 @@ var interfacePrefixes = map[string]struct {
 	Speed  string
 }{
 	"GigabitEthernet":            {"ge", "1G"},
+	"TwoDotFiveGigabitEthernet":  {"tg", "2.5G"},
 	"TenGigabitEthernet":         {"xe", "10G"},
 	"TwentyFiveGigabitEthernet":  {"tf", "25G"},
 	"FortyGigabitEthernet":       {"fo", "40G"},
@@ -79,7 +80,7 @@ func getVPPInterfaces() []string {
 	var interfaces []string
 	lines := strings.Split(string(output), "\n")
 
-	ifacePattern := regexp.MustCompile(`^(GigabitEthernet|TenGigabitEthernet|TwentyFiveGigabitEthernet|FortyGigabitEthernet|FiftyGigabitEthernet|HundredGigabitEthernet|TwoHundredGigabitEthernet|FourHundredGigabitEthernet)`)
+	ifacePattern := regexp.MustCompile(`^(GigabitEthernet|TwoDotFiveGigabitEthernet|TenGigabitEthernet|TwentyFiveGigabitEthernet|FortyGigabitEthernet|FiftyGigabitEthernet|HundredGigabitEthernet|TwoHundredGigabitEthernet|FourHundredGigabitEthernet)`)
 
 	for _, line := range lines {
 		fields := strings.Fields(line)

@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -2844,29 +2845,379 @@ func showBGPLog(args []string) {
 }
 
 func showConfiguration() {
-	headData, err := os.ReadFile("/etc/vpp/config/head.vpp")
-	if err == nil && len(headData) > 0 {
-		fmt.Print(string(headData))
-		if !strings.HasSuffix(string(headData), "\n") {
-			fmt.Println()
+	floofVersion := "1.0"
+	osReleaseData, err := os.ReadFile("/etc/os-release")
+	if err == nil {
+		lines := strings.Split(string(osReleaseData), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "VERSION=") {
+				floofVersion = strings.Trim(strings.TrimPrefix(line, "VERSION="), "\"")
+				break
+			}
 		}
 	}
 
-	mainData, err := os.ReadFile("/etc/vpp/config/vppcfg.vpp")
-	if err == nil && len(mainData) > 0 {
-		fmt.Print(string(mainData))
-		if !strings.HasSuffix(string(mainData), "\n") {
-			fmt.Println()
+	lastCommitTime := "never"
+	lastCommitUser := "unknown"
+	rollback0 := "/etc/floofos-config/commits/0"
+	if info, err := os.Stat(rollback0); err == nil {
+		lastCommitTime = info.ModTime().Format("2006-01-02 15:04:05-07:00")
+		if logData, err := os.ReadFile("/var/log/floofos-audit.log"); err == nil {
+			logLines := strings.Split(string(logData), "\n")
+			for i := len(logLines) - 1; i >= 0; i-- {
+				if strings.Contains(logLines[i], "[COMMIT]") {
+					parts := strings.Split(logLines[i], " ")
+					for _, p := range parts {
+						if strings.HasPrefix(p, "user=") {
+							lastCommitUser = strings.TrimPrefix(p, "user=")
+							break
+						}
+					}
+					break
+				}
+			}
 		}
 	}
 
-	tailData, err := os.ReadFile("/etc/vpp/config/tail.vpp")
-	if err == nil && len(tailData) > 0 {
-		fmt.Print(string(tailData))
-		if !strings.HasSuffix(string(tailData), "\n") {
-			fmt.Println()
+	fmt.Printf("!Version FloofOS %s\n", floofVersion)
+	fmt.Printf("!Last configuration was updated at %s by %s\n", lastCommitTime, lastCommitUser)
+	fmt.Println("!")
+
+	if hostname, err := os.ReadFile("/etc/hostname"); err == nil {
+		h := strings.TrimSpace(string(hostname))
+		if h != "" {
+			fmt.Printf("set hostname %s\n", h)
 		}
 	}
+
+	if tz, err := os.ReadFile("/etc/timezone"); err == nil {
+		t := strings.TrimSpace(string(tz))
+		if t != "" {
+			fmt.Printf("set system time-zone %s\n", t)
+		}
+	}
+
+	if logData, err := os.ReadFile("/etc/floofctl/log.conf"); err == nil {
+		lines := strings.Split(string(logData), "\n")
+		globalEnabled := true
+		systemEnabled := true
+		bgpEnabled := true
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "LOGGING_GLOBAL_ENABLED=") {
+				globalEnabled = strings.TrimPrefix(line, "LOGGING_GLOBAL_ENABLED=") == "true"
+			}
+			if strings.HasPrefix(line, "LOGGING_SYSTEM_ENABLED=") {
+				systemEnabled = strings.TrimPrefix(line, "LOGGING_SYSTEM_ENABLED=") == "true"
+			}
+			if strings.HasPrefix(line, "LOGGING_BGP_ENABLED=") {
+				bgpEnabled = strings.TrimPrefix(line, "LOGGING_BGP_ENABLED=") == "true"
+			}
+		}
+		if globalEnabled {
+			fmt.Println("set all logging enable")
+		} else {
+			fmt.Println("set all logging disable")
+		}
+		if systemEnabled {
+			fmt.Println("set system logging enable")
+		} else {
+			fmt.Println("set system logging disable")
+		}
+		if bgpEnabled {
+			fmt.Println("set bgp logging enable")
+		} else {
+			fmt.Println("set bgp logging disable")
+		}
+	} else {
+		fmt.Println("set all logging enable")
+		fmt.Println("set system logging enable")
+		fmt.Println("set bgp logging enable")
+	}
+	fmt.Println("!")
+
+	if passwdData, err := os.ReadFile("/etc/passwd"); err == nil {
+		lines := strings.Split(string(passwdData), "\n")
+		hasUsers := false
+		for _, line := range lines {
+			if line == "" {
+				continue
+			}
+			parts := strings.Split(line, ":")
+			if len(parts) < 7 {
+				continue
+			}
+			username := parts[0]
+			uid := parts[2]
+			shell := parts[6]
+
+			if uid < "1000" {
+				continue
+			}
+			if username == "nobody" || username == "nogroup" || username == "nfsnobody" {
+				continue
+			}
+			if shell == "/usr/sbin/nologin" || shell == "/bin/false" || shell == "/sbin/nologin" {
+				continue
+			}
+
+			homeDir := parts[5]
+			sshKeyFile := homeDir + "/.ssh/authorized_keys"
+			hasSSHKey := false
+			if _, err := os.Stat(sshKeyFile); err == nil {
+				hasSSHKey = true
+			}
+
+			if hasSSHKey {
+				fmt.Printf("create user %s password **** ssh-key ****\n", username)
+			} else {
+				fmt.Printf("create user %s password ****\n", username)
+			}
+			hasUsers = true
+		}
+		if hasUsers {
+			fmt.Println("!")
+		}
+	}
+
+	if resolvData, err := os.ReadFile("/etc/resolv.conf"); err == nil {
+		lines := strings.Split(string(resolvData), "\n")
+		hasDNS := false
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "nameserver ") {
+				server := strings.TrimPrefix(trimmed, "nameserver ")
+				fmt.Printf("dns name-server %s\n", server)
+				hasDNS = true
+			}
+		}
+		if hasDNS {
+			fmt.Println("!")
+		}
+	}
+
+	vppCommands := getVPPConfigGrouped()
+	if len(vppCommands) > 0 {
+		for _, group := range vppCommands {
+			for _, cmd := range group {
+				fmt.Println(cmd)
+			}
+			fmt.Println("!")
+		}
+	}
+
+	if info, err := os.Stat("/etc/pathvector.yml"); err == nil {
+		fmt.Println("set bgp")
+		lastMod := info.ModTime().Format("2006-01-02 15:04:05")
+		fmt.Printf("!Last modified bgp: %s\n", lastMod)
+		fmt.Println("!Edit with: set bgp")
+		fmt.Println("!")
+	}
+
+	firewallEnabled := false
+	cmd := exec.Command("systemctl", "is-active", "nftables-dataplane.service")
+	if output, err := cmd.CombinedOutput(); err == nil && strings.TrimSpace(string(output)) == "active" {
+		firewallEnabled = true
+	}
+
+	if firewallEnabled {
+		fmt.Println("set security firewall enable")
+
+		nftCmd := exec.Command("nft", "list", "table", "inet", "floofos")
+		if output, err := nftCmd.CombinedOutput(); err == nil {
+			rules := parseFirewallRulesForConfig(string(output))
+			for _, rule := range rules {
+				fmt.Println(rule)
+			}
+		}
+	} else {
+		fmt.Println("set security firewall disable")
+	}
+
+	fail2banCmd := exec.Command("systemctl", "is-active", "fail2ban")
+	if output, err := fail2banCmd.CombinedOutput(); err == nil && strings.TrimSpace(string(output)) == "active" {
+		fmt.Println("set security fail2ban enable")
+	} else {
+		fmt.Println("set security fail2ban disable")
+	}
+
+	sshdConfig, err := os.ReadFile("/etc/ssh/sshd_config")
+	if err == nil {
+		lines := strings.Split(string(sshdConfig), "\n")
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "PasswordAuthentication") {
+				parts := strings.Fields(trimmed)
+				if len(parts) >= 2 {
+					if strings.ToLower(parts[1]) == "yes" {
+						fmt.Println("set security ssh-password-auth enable")
+					} else {
+						fmt.Println("set security ssh-password-auth disable")
+					}
+				}
+				break
+			}
+		}
+	}
+	fmt.Println("!")
+
+	snmpdActive := false
+	cmd = exec.Command("systemctl", "is-active", "snmpd-dataplane.service")
+	if output, err := cmd.CombinedOutput(); err == nil && strings.TrimSpace(string(output)) == "active" {
+		snmpdActive = true
+	}
+
+	if snmpdActive {
+		fmt.Println("set snmp enable")
+		if snmpData, err := os.ReadFile("/etc/snmp/snmpd-dataplane.conf"); err == nil {
+			lines := strings.Split(string(snmpData), "\n")
+			for _, line := range lines {
+				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, "#") || trimmed == "" {
+					continue
+				}
+				if strings.HasPrefix(trimmed, "rocommunity ") {
+					parts := strings.Fields(trimmed)
+					if len(parts) >= 2 {
+						fmt.Printf("set snmp community %s\n", parts[1])
+					}
+				}
+				if strings.HasPrefix(trimmed, "syslocation ") {
+					loc := strings.TrimPrefix(trimmed, "syslocation ")
+					fmt.Printf("set snmp location %s\n", loc)
+				}
+				if strings.HasPrefix(trimmed, "syscontact ") {
+					contact := strings.TrimPrefix(trimmed, "syscontact ")
+					fmt.Printf("set snmp contact %s\n", contact)
+				}
+			}
+		}
+		fmt.Println("!")
+	}
+}
+
+func getVPPConfigGrouped() [][]string {
+	var allCommands []string
+
+	for _, file := range []string{"/etc/vpp/config/head.vpp", "/etc/vpp/config/vppcfg.vpp", "/etc/vpp/config/tail.vpp"} {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "//") {
+				continue
+			}
+			allCommands = append(allCommands, trimmed)
+		}
+	}
+
+	if len(allCommands) == 0 {
+		return nil
+	}
+
+	groups := make(map[string][]string)
+	groupOrder := []string{}
+
+	for _, cmd := range allCommands {
+		parts := strings.Fields(cmd)
+		var prefix string
+		if len(parts) >= 2 {
+			prefix = parts[0] + " " + parts[1]
+			if prefix == "set interface" && len(parts) >= 3 {
+				thirdWord := parts[2]
+				if thirdWord == "state" || thirdWord == "ip" || thirdWord == "mtu" || thirdWord == "rx-mode" {
+					prefix = prefix + " " + thirdWord
+				}
+			}
+		} else if len(parts) == 1 {
+			prefix = parts[0]
+		} else {
+			continue
+		}
+
+		if _, exists := groups[prefix]; !exists {
+			groupOrder = append(groupOrder, prefix)
+		}
+		groups[prefix] = append(groups[prefix], cmd)
+	}
+
+	var result [][]string
+	for _, prefix := range groupOrder {
+		result = append(result, groups[prefix])
+	}
+
+	return result
+}
+
+func parseFirewallRulesForConfig(rulesetStr string) []string {
+	var rules []string
+
+	lines := strings.Split(rulesetStr, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		if !strings.Contains(line, "accept") && !strings.Contains(line, "drop") {
+			continue
+		}
+
+		if strings.Contains(line, "type filter hook") ||
+			strings.Contains(line, "policy") ||
+			strings.Contains(line, "iif") ||
+			strings.Contains(line, "counter log prefix") ||
+			strings.Contains(line, "ct state established") ||
+			strings.Contains(line, "ct state invalid") {
+			continue
+		}
+
+		if strings.Contains(line, `comment "system-`) {
+			continue
+		}
+
+		commentRegex := regexp.MustCompile(`comment "([^"]+)"`)
+		matches := commentRegex.FindStringSubmatch(line)
+		if len(matches) < 2 {
+			continue
+		}
+		ruleName := matches[1]
+
+		protocol := ""
+		if strings.Contains(line, "tcp dport") {
+			protocol = "tcp"
+		} else if strings.Contains(line, "udp dport") {
+			protocol = "udp"
+		}
+
+		port := ""
+		portRegex := regexp.MustCompile(`(tcp|udp) dport (\d+)`)
+		if portMatches := portRegex.FindStringSubmatch(line); len(portMatches) > 2 {
+			port = portMatches[2]
+		}
+
+		srcAddress := ""
+		srcRegex := regexp.MustCompile(`ip saddr ([0-9./]+)`)
+		if srcMatches := srcRegex.FindStringSubmatch(line); len(srcMatches) > 1 {
+			srcAddress = srcMatches[1]
+		}
+
+		action := "accept"
+		if strings.Contains(line, "drop") {
+			action = "drop"
+		}
+
+		if protocol != "" && port != "" {
+			configLine := fmt.Sprintf("set security firewall rule %s protocol %s port %s", ruleName, protocol, port)
+			if srcAddress != "" && srcAddress != "0.0.0.0/0" {
+				configLine += fmt.Sprintf(" src-address %s", srcAddress)
+			}
+			configLine += fmt.Sprintf(" action %s", action)
+			rules = append(rules, configLine)
+		}
+	}
+
+	return rules
 }
 
 func editBGPConfig() {
