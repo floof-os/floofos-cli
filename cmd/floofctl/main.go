@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -128,9 +129,9 @@ var completionTree = map[string][]string{
 	},
 	"show": {
 		"backups",
-		"bgp",
 		"configuration",
 		"log",
+		"protocol",
 		"resource",
 		"system",
 		"traffic",
@@ -278,7 +279,6 @@ var completionTree = map[string][]string{
 	"show protocols": {
 		"all",
 	},
-	"show protocol": {},
 	"show route": {
 		"all",
 		"count",
@@ -314,11 +314,14 @@ var completionTree = map[string][]string{
 		"commit",
 		"today",
 	},
-	"show bgp": {
+	"show protocol": {
+		"bgp",
+	},
+	"show protocol bgp": {
 		"summary",
 		"logging",
 	},
-	"show bgp logging": {
+	"show protocol bgp logging": {
 		"last",
 	},
 	"show traffic": {
@@ -347,7 +350,7 @@ var completionTree = map[string][]string{
 	"set": {
 		"hostname",
 		"all",
-		"bgp",
+		"protocol",
 		"system",
 		"security",
 		"snmp",
@@ -355,6 +358,9 @@ var completionTree = map[string][]string{
 		"ip",
 		"ip6",
 		"logging",
+	},
+	"set protocol": {
+		"bgp",
 	},
 	"set interface": {
 		"state",
@@ -437,10 +443,10 @@ var completionTree = map[string][]string{
 		"enable",
 		"disable",
 	},
-	"set bgp": {
+	"set protocol bgp": {
 		"logging",
 	},
-	"set bgp logging": {
+	"set protocol bgp logging": {
 		"enable",
 		"disable",
 	},
@@ -923,9 +929,9 @@ func processCommandInstantHelp(input string) bool {
 		return false
 	}
 
-	if len(args) >= 2 && args[0] == "show" && args[1] == "bgp" {
-		if len(args) >= 3 && args[2] == "logging" {
-			showBGPLog(args[3:])
+	if len(args) >= 3 && args[0] == "show" && args[1] == "protocol" && args[2] == "bgp" {
+		if len(args) >= 4 && args[3] == "logging" {
+			showBGPLog(args[4:])
 			return false
 		}
 		executePathvector(args[1:])
@@ -1160,11 +1166,11 @@ func processCommand(line string, liner *liner.State) bool {
 		return false
 	}
 
-	if len(args) >= 2 && args[0] == "show" && args[1] == "bgp" {
-		if len(args) >= 3 && args[2] == "logging" {
+	if len(args) >= 3 && args[0] == "show" && args[1] == "protocol" && args[2] == "bgp" {
+		if len(args) >= 4 && args[3] == "logging" {
 			return false
 		}
-		executePathvector(args[1:])
+		executePathvector(args[2:])
 		return false
 	}
 
@@ -1317,13 +1323,19 @@ func showHelp(line string) {
 			return
 		}
 
-		if len(args) == 2 && args[0] == "set" && args[1] == "bgp" {
+		if len(args) == 2 && args[0] == "set" && args[1] == "protocol" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  bgp           BGP routing protocol")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "set" && args[1] == "protocol" && args[2] == "bgp" {
 			fmt.Println("  <cr>          Edit BGP configuration")
 			fmt.Println("  logging       BGP log viewer control")
 			return
 		}
 
-		if len(args) == 3 && args[0] == "set" && args[1] == "bgp" && args[2] == "logging" {
+		if len(args) == 4 && args[0] == "set" && args[1] == "protocol" && args[2] == "bgp" && args[3] == "logging" {
 			fmt.Println("  disable       Disable BGP log viewer")
 			fmt.Println("  enable        Enable BGP log viewer")
 			return
@@ -1371,10 +1383,10 @@ func showHelp(line string) {
 
 		if len(args) == 1 && args[0] == "show" {
 			var output strings.Builder
-			output.WriteString("  <cr>          Display VPP/BIRD information\n")
+			output.WriteString("  <cr>          Display current configuration\n")
 			output.WriteString("  backups       Show all backups\n")
-			output.WriteString("  bgp           BGP routing information\n")
-			output.WriteString("  configuration VPP configuration\n")
+			output.WriteString("  configuration Current configuration\n")
+			output.WriteString("  protocol      Routing protocol information\n")
 			output.WriteString("  resource      System resources\n")
 			output.WriteString("  security      Security and access control\n")
 			output.WriteString("  snmp          SNMP agent status\n")
@@ -1396,14 +1408,20 @@ func showHelp(line string) {
 			return
 		}
 
-		if len(args) == 2 && args[0] == "show" && args[1] == "bgp" {
+		if len(args) == 2 && args[0] == "show" && args[1] == "protocol" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  bgp           BGP routing protocol")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "show" && args[1] == "protocol" && args[2] == "bgp" {
 			fmt.Println("  <cr>          BGP status")
 			fmt.Println("  logging       BGP routing logs")
 			fmt.Println("  summary       BGP summary")
 			return
 		}
 
-		if len(args) == 3 && args[0] == "show" && args[1] == "bgp" && args[2] == "logging" {
+		if len(args) == 4 && args[0] == "show" && args[1] == "protocol" && args[2] == "bgp" && args[3] == "logging" {
 			fmt.Println("  <cr>          Show last 100 lines")
 			fmt.Println("  last          Show last N lines")
 			return
@@ -2283,10 +2301,31 @@ func executeFloofOS(line string) {
 			} else {
 				fmt.Println("Unknown parameter")
 			}
+		} else if args[1] == "protocol" {
+			if len(args) >= 3 && args[2] == "bgp" {
+				if len(args) >= 4 && args[3] == "logging" {
+					if len(args) < 5 {
+						fmt.Println("Usage: set protocol bgp logging <enable|disable>")
+						return
+					}
+					if args[4] == "enable" {
+						setLogBGPEnable()
+					} else if args[4] == "disable" {
+						setLogBGPDisable()
+					} else {
+						fmt.Println("Usage: set protocol bgp logging <enable|disable>")
+					}
+				} else if len(args) == 3 {
+					editBGPConfig()
+					hasUnsavedChanges = true
+				}
+			} else {
+				fmt.Println("Unknown protocol")
+			}
 		} else if args[1] == "bgp" {
 			if len(args) >= 3 && args[2] == "logging" {
 				if len(args) < 4 {
-					fmt.Println("Usage: set bgp logging <enable|disable>")
+					fmt.Println("Usage: set protocol bgp logging <enable|disable>")
 					return
 				}
 				if args[3] == "enable" {
@@ -2365,14 +2404,18 @@ func executeFloofOS(line string) {
 			showResource()
 		} else if len(args) >= 2 && args[1] == "users" {
 			showUsers()
-		} else if len(args) >= 3 && args[1] == "bgp" && args[2] == "logging" {
-			showBGPLog(args[3:])
+		} else if len(args) >= 4 && args[1] == "protocol" && args[2] == "bgp" && args[3] == "logging" {
+			showBGPLog(args[4:])
+		} else if len(args) >= 3 && args[1] == "protocol" && args[2] == "bgp" {
+			executePathvector(args[2:])
 		} else if len(args) >= 4 && args[1] == "traffic" && args[2] == "interface" {
 			showTrafficInterface(args[3])
 		} else if len(args) >= 2 && args[1] == "security" {
 			handleSecurityShowCommands(args[2:])
 		} else if len(args) >= 2 && args[1] == "snmp" {
 			handleSNMPShowCommands(args[2:])
+		} else if len(args) == 1 {
+			showConfiguration()
 		} else {
 			fmt.Println("Unknown show command")
 		}
@@ -2845,6 +2888,8 @@ func showBGPLog(args []string) {
 }
 
 func showConfiguration() {
+	var output strings.Builder
+
 	floofVersion := "1.0"
 	osReleaseData, err := os.ReadFile("/etc/os-release")
 	if err == nil {
@@ -2877,68 +2922,74 @@ func showConfiguration() {
 				}
 			}
 		}
+		if lastCommitUser == "unknown" {
+			if currentUser, err := user.Current(); err == nil {
+				lastCommitUser = currentUser.Username
+			}
+		}
 	}
 
-	fmt.Printf("!Version FloofOS %s\n", floofVersion)
-	fmt.Printf("!Last configuration was updated at %s by %s\n", lastCommitTime, lastCommitUser)
-	fmt.Println("!")
+	output.WriteString(fmt.Sprintf("!Version FloofOS %s\n", floofVersion))
+	output.WriteString(fmt.Sprintf("!Last configuration was updated at %s by %s\n", lastCommitTime, lastCommitUser))
+	output.WriteString("!\n")
 
 	if hostname, err := os.ReadFile("/etc/hostname"); err == nil {
 		h := strings.TrimSpace(string(hostname))
 		if h != "" {
-			fmt.Printf("set hostname %s\n", h)
+			output.WriteString(fmt.Sprintf("set hostname %s\n", h))
+			output.WriteString("!\n")
 		}
 	}
 
+	systemLines := []string{}
 	if tz, err := os.ReadFile("/etc/timezone"); err == nil {
 		t := strings.TrimSpace(string(tz))
 		if t != "" {
-			fmt.Printf("set system time-zone %s\n", t)
+			systemLines = append(systemLines, fmt.Sprintf("set system time-zone %s", t))
 		}
 	}
-
+	systemEnabled := true
 	if logData, err := os.ReadFile("/etc/floofctl/log.conf"); err == nil {
 		lines := strings.Split(string(logData), "\n")
-		globalEnabled := true
-		systemEnabled := true
-		bgpEnabled := true
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "LOGGING_SYSTEM_ENABLED=") {
+				systemEnabled = strings.TrimPrefix(line, "LOGGING_SYSTEM_ENABLED=") == "true"
+			}
+		}
+	}
+	if systemEnabled {
+		systemLines = append(systemLines, "set system logging enable")
+	} else {
+		systemLines = append(systemLines, "set system logging disable")
+	}
+	if len(systemLines) > 0 {
+		for _, l := range systemLines {
+			output.WriteString(l + "\n")
+		}
+		output.WriteString("!\n")
+	}
+
+	globalEnabled := true
+	if logData, err := os.ReadFile("/etc/floofctl/log.conf"); err == nil {
+		lines := strings.Split(string(logData), "\n")
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "LOGGING_GLOBAL_ENABLED=") {
 				globalEnabled = strings.TrimPrefix(line, "LOGGING_GLOBAL_ENABLED=") == "true"
 			}
-			if strings.HasPrefix(line, "LOGGING_SYSTEM_ENABLED=") {
-				systemEnabled = strings.TrimPrefix(line, "LOGGING_SYSTEM_ENABLED=") == "true"
-			}
-			if strings.HasPrefix(line, "LOGGING_BGP_ENABLED=") {
-				bgpEnabled = strings.TrimPrefix(line, "LOGGING_BGP_ENABLED=") == "true"
-			}
 		}
-		if globalEnabled {
-			fmt.Println("set all logging enable")
-		} else {
-			fmt.Println("set all logging disable")
-		}
-		if systemEnabled {
-			fmt.Println("set system logging enable")
-		} else {
-			fmt.Println("set system logging disable")
-		}
-		if bgpEnabled {
-			fmt.Println("set bgp logging enable")
-		} else {
-			fmt.Println("set bgp logging disable")
-		}
-	} else {
-		fmt.Println("set all logging enable")
-		fmt.Println("set system logging enable")
-		fmt.Println("set bgp logging enable")
 	}
-	fmt.Println("!")
+	if globalEnabled {
+		output.WriteString("set all logging enable\n")
+	} else {
+		output.WriteString("set all logging disable\n")
+	}
+	output.WriteString("!\n")
 
 	if passwdData, err := os.ReadFile("/etc/passwd"); err == nil {
 		lines := strings.Split(string(passwdData), "\n")
-		hasUsers := false
+		userLines := []string{}
 		for _, line := range lines {
 			if line == "" {
 				continue
@@ -2969,76 +3020,74 @@ func showConfiguration() {
 			}
 
 			if hasSSHKey {
-				fmt.Printf("create user %s password **** ssh-key ****\n", username)
+				userLines = append(userLines, fmt.Sprintf("create user %s password **** ssh-key ****", username))
 			} else {
-				fmt.Printf("create user %s password ****\n", username)
+				userLines = append(userLines, fmt.Sprintf("create user %s password ****", username))
 			}
-			hasUsers = true
 		}
-		if hasUsers {
-			fmt.Println("!")
+		if len(userLines) > 0 {
+			for _, l := range userLines {
+				output.WriteString(l + "\n")
+			}
+			output.WriteString("!\n")
 		}
 	}
 
-	if resolvData, err := os.ReadFile("/etc/resolv.conf"); err == nil {
-		lines := strings.Split(string(resolvData), "\n")
-		hasDNS := false
-		for _, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "nameserver ") {
-				server := strings.TrimPrefix(trimmed, "nameserver ")
-				fmt.Printf("dns name-server %s\n", server)
-				hasDNS = true
-			}
-		}
-		if hasDNS {
-			fmt.Println("!")
-		}
-	}
-
-	vppCommands := getVPPConfigGrouped()
+	vppCommands := getVPPConfigGroupedClean()
 	if len(vppCommands) > 0 {
 		for _, group := range vppCommands {
 			for _, cmd := range group {
-				fmt.Println(cmd)
+				output.WriteString(cmd + "\n")
 			}
-			fmt.Println("!")
+			output.WriteString("!\n")
 		}
 	}
 
+	bgpEnabled := true
+	if logData, err := os.ReadFile("/etc/floofctl/log.conf"); err == nil {
+		lines := strings.Split(string(logData), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "LOGGING_BGP_ENABLED=") {
+				bgpEnabled = strings.TrimPrefix(line, "LOGGING_BGP_ENABLED=") == "true"
+			}
+		}
+	}
 	if info, err := os.Stat("/etc/pathvector.yml"); err == nil {
-		fmt.Println("set bgp")
 		lastMod := info.ModTime().Format("2006-01-02 15:04:05")
-		fmt.Printf("!Last modified bgp: %s\n", lastMod)
-		fmt.Println("!Edit with: set bgp")
-		fmt.Println("!")
+		output.WriteString(fmt.Sprintf("!BGP Configuration Last modified: %s\n", lastMod))
+		output.WriteString("!Edit with: set protocol bgp\n")
+		if bgpEnabled {
+			output.WriteString("set protocol bgp logging enable\n")
+		} else {
+			output.WriteString("set protocol bgp logging disable\n")
+		}
+		output.WriteString("!\n")
 	}
 
+	securityLines := []string{}
 	firewallEnabled := false
 	cmd := exec.Command("systemctl", "is-active", "nftables-dataplane.service")
-	if output, err := cmd.CombinedOutput(); err == nil && strings.TrimSpace(string(output)) == "active" {
+	if cmdOutput, err := cmd.CombinedOutput(); err == nil && strings.TrimSpace(string(cmdOutput)) == "active" {
 		firewallEnabled = true
 	}
 
 	if firewallEnabled {
-		fmt.Println("set security firewall enable")
-
+		securityLines = append(securityLines, "set security firewall enable")
 		nftCmd := exec.Command("nft", "list", "table", "inet", "floofos")
-		if output, err := nftCmd.CombinedOutput(); err == nil {
-			rules := parseFirewallRulesForConfig(string(output))
-			for _, rule := range rules {
-				fmt.Println(rule)
-			}
+		if nftOutput, err := nftCmd.CombinedOutput(); err == nil {
+			rules := parseFirewallRulesForConfig(string(nftOutput))
+			securityLines = append(securityLines, rules...)
 		}
 	} else {
-		fmt.Println("set security firewall disable")
+		securityLines = append(securityLines, "set security firewall disable")
 	}
 
 	fail2banCmd := exec.Command("systemctl", "is-active", "fail2ban")
-	if output, err := fail2banCmd.CombinedOutput(); err == nil && strings.TrimSpace(string(output)) == "active" {
-		fmt.Println("set security fail2ban enable")
+	if fail2banOutput, err := fail2banCmd.CombinedOutput(); err == nil && strings.TrimSpace(string(fail2banOutput)) == "active" {
+		securityLines = append(securityLines, "set security fail2ban enable")
 	} else {
-		fmt.Println("set security fail2ban disable")
+		securityLines = append(securityLines, "set security fail2ban disable")
 	}
 
 	sshdConfig, err := os.ReadFile("/etc/ssh/sshd_config")
@@ -3050,25 +3099,31 @@ func showConfiguration() {
 				parts := strings.Fields(trimmed)
 				if len(parts) >= 2 {
 					if strings.ToLower(parts[1]) == "yes" {
-						fmt.Println("set security ssh-password-auth enable")
+						securityLines = append(securityLines, "set security ssh-password-auth enable")
 					} else {
-						fmt.Println("set security ssh-password-auth disable")
+						securityLines = append(securityLines, "set security ssh-password-auth disable")
 					}
 				}
 				break
 			}
 		}
 	}
-	fmt.Println("!")
+
+	if len(securityLines) > 0 {
+		for _, l := range securityLines {
+			output.WriteString(l + "\n")
+		}
+		output.WriteString("!\n")
+	}
 
 	snmpdActive := false
 	cmd = exec.Command("systemctl", "is-active", "snmpd-dataplane.service")
-	if output, err := cmd.CombinedOutput(); err == nil && strings.TrimSpace(string(output)) == "active" {
+	if cmdOutput, err := cmd.CombinedOutput(); err == nil && strings.TrimSpace(string(cmdOutput)) == "active" {
 		snmpdActive = true
 	}
 
 	if snmpdActive {
-		fmt.Println("set snmp enable")
+		snmpLines := []string{"set snmp enable"}
 		if snmpData, err := os.ReadFile("/etc/snmp/snmpd-dataplane.conf"); err == nil {
 			lines := strings.Split(string(snmpData), "\n")
 			for _, line := range lines {
@@ -3079,21 +3134,26 @@ func showConfiguration() {
 				if strings.HasPrefix(trimmed, "rocommunity ") {
 					parts := strings.Fields(trimmed)
 					if len(parts) >= 2 {
-						fmt.Printf("set snmp community %s\n", parts[1])
+						snmpLines = append(snmpLines, fmt.Sprintf("set snmp community %s", parts[1]))
 					}
 				}
 				if strings.HasPrefix(trimmed, "syslocation ") {
 					loc := strings.TrimPrefix(trimmed, "syslocation ")
-					fmt.Printf("set snmp location %s\n", loc)
+					snmpLines = append(snmpLines, fmt.Sprintf("set snmp location %s", loc))
 				}
 				if strings.HasPrefix(trimmed, "syscontact ") {
 					contact := strings.TrimPrefix(trimmed, "syscontact ")
-					fmt.Printf("set snmp contact %s\n", contact)
+					snmpLines = append(snmpLines, fmt.Sprintf("set snmp contact %s", contact))
 				}
 			}
 		}
-		fmt.Println("!")
+		for _, l := range snmpLines {
+			output.WriteString(l + "\n")
+		}
+		output.WriteString("!\n")
 	}
+
+	printWithPager(output.String())
 }
 
 func getVPPConfigGrouped() [][]string {
@@ -3131,6 +3191,68 @@ func getVPPConfigGrouped() [][]string {
 				if thirdWord == "state" || thirdWord == "ip" || thirdWord == "mtu" || thirdWord == "rx-mode" {
 					prefix = prefix + " " + thirdWord
 				}
+			}
+		} else if len(parts) == 1 {
+			prefix = parts[0]
+		} else {
+			continue
+		}
+
+		if _, exists := groups[prefix]; !exists {
+			groupOrder = append(groupOrder, prefix)
+		}
+		groups[prefix] = append(groups[prefix], cmd)
+	}
+
+	var result [][]string
+	for _, prefix := range groupOrder {
+		result = append(result, groups[prefix])
+	}
+
+	return result
+}
+
+func getVPPConfigGroupedClean() [][]string {
+	var allCommands []string
+
+	for _, file := range []string{"/etc/vpp/config/head.vpp", "/etc/vpp/config/vppcfg.vpp", "/etc/vpp/config/tail.vpp"} {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "//") {
+				continue
+			}
+			if strings.HasPrefix(trimmed, "comment {") {
+				continue
+			}
+			allCommands = append(allCommands, trimmed)
+		}
+	}
+
+	if len(allCommands) == 0 {
+		return nil
+	}
+
+	groups := make(map[string][]string)
+	groupOrder := []string{}
+
+	for _, cmd := range allCommands {
+		parts := strings.Fields(cmd)
+		var prefix string
+		if len(parts) >= 2 {
+			prefix = parts[0] + " " + parts[1]
+			if prefix == "set interface" && len(parts) >= 3 {
+				thirdWord := parts[2]
+				if thirdWord == "state" || thirdWord == "ip" || thirdWord == "mtu" || thirdWord == "rx-mode" {
+					prefix = prefix + " " + thirdWord
+				}
+			}
+			if prefix == "lcp create" {
+				prefix = "lcp create"
 			}
 		} else if len(parts) == 1 {
 			prefix = parts[0]
@@ -3287,7 +3409,7 @@ func isFloofOSCommand(line string) bool {
 
 	if firstWord == "set" && len(args) >= 2 {
 		secondWord := args[1]
-		if secondWord == "bgp" || secondWord == "hostname" ||
+		if secondWord == "protocol" || secondWord == "bgp" || secondWord == "hostname" ||
 			secondWord == "security" || secondWord == "snmp" ||
 			secondWord == "all" {
 			return true
