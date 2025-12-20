@@ -607,8 +607,16 @@ var completionTree = map[string][]string{
 		"interfaces",
 	},
 	"backup": {
-		"create",
-		"restore",
+		"export",
+		"import",
+	},
+	"backup export": {
+		"<name>",
+		"path",
+	},
+	"backup import": {
+		"<name>",
+		"path",
 	},
 }
 
@@ -929,12 +937,21 @@ func processCommandInstantHelp(input string) bool {
 		return false
 	}
 
+	if cmd == "show" && len(args) == 1 {
+		showConfiguration()
+		return false
+	}
+
 	if len(args) >= 3 && args[0] == "show" && args[1] == "protocol" && args[2] == "bgp" {
 		if len(args) >= 4 && args[3] == "logging" {
 			showBGPLog(args[4:])
 			return false
 		}
-		executePathvector(args[1:])
+		if len(args) >= 4 && args[3] == "summary" {
+			executePathvector([]string{"bgp", "summary"})
+			return false
+		}
+		executePathvector([]string{"bgp"})
 		return false
 	}
 
@@ -1206,15 +1223,13 @@ func showHelp(line string) {
 			var output strings.Builder
 			output.WriteString("Possible completions:\n")
 			output.WriteString("  all           Global configuration\n")
-			output.WriteString("  bgp           BGP routing configuration\n")
 			output.WriteString("  hostname      System hostname\n")
+			output.WriteString("  protocol      Routing protocol configuration\n")
 			output.WriteString("  security [ firewall | fail2ban | ssh-key ]\n")
 			output.WriteString("                Security and access control\n")
 			output.WriteString("  snmp [ enable | community | location ]\n")
 			output.WriteString("                SNMP monitoring agent\n")
 			output.WriteString("  system        System configuration\n")
-			output.WriteString("\n")
-
 			vppCmd := exec.Command("vppctl", "set", "?")
 			if vppOutput, err := vppCmd.CombinedOutput(); err == nil && len(vppOutput) > 0 {
 				vppStr := strings.TrimSpace(string(vppOutput))
@@ -1274,6 +1289,27 @@ func showHelp(line string) {
 			return
 		}
 
+		if len(args) == 4 && args[0] == "set" && args[1] == "security" && args[2] == "firewall" && args[3] == "rule" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <name>        Unique rule name")
+			return
+		}
+
+		if len(args) >= 5 && args[0] == "set" && args[1] == "security" && args[2] == "firewall" && args[3] == "rule" {
+			fmt.Println("Usage: set security firewall rule <name> protocol <tcp|udp> port <port> [src-address <ip/cidr>] action <accept|drop>")
+			fmt.Println()
+			fmt.Println("Parameters:")
+			fmt.Println("  protocol      tcp or udp")
+			fmt.Println("  port          Port number (1-65535)")
+			fmt.Println("  src-address   Source IP/CIDR (optional)")
+			fmt.Println("  action        accept or drop")
+			fmt.Println()
+			fmt.Println("Examples:")
+			fmt.Println("  set security firewall rule web protocol tcp port 80 action accept")
+			fmt.Println("  set security firewall rule ssh-lan protocol tcp port 22 src-address 192.168.1.0/24 action accept")
+			return
+		}
+
 		if len(args) == 3 && args[0] == "set" && args[1] == "security" && args[2] == "fail2ban" {
 			fmt.Println("Possible completions:")
 			fmt.Println("  enable                    Enable fail2ban")
@@ -1293,6 +1329,62 @@ func showHelp(line string) {
 		if len(args) == 4 && args[0] == "set" && args[1] == "security" && args[2] == "fail2ban" && args[3] == "disable" {
 			fmt.Println("Possible completions:")
 			fmt.Println("  <cr>          Disable fail2ban")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "set" && args[1] == "security" && args[2] == "fail2ban" && args[3] == "maxretry" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <number>      Maximum login attempts before ban")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "set" && args[1] == "security" && args[2] == "fail2ban" && args[3] == "bantime" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <seconds>     Ban duration in seconds")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "set" && args[1] == "security" && args[2] == "ssh-key" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <username>    Username to add SSH key for")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "set" && args[1] == "security" && args[2] == "ssh-password-auth" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  enable        Enable SSH password authentication")
+			fmt.Println("  disable       Disable SSH password authentication")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "set" && args[1] == "security" && args[2] == "firewall" && args[3] == "rule" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <name>        Unique rule name")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "set" && args[1] == "security" && args[2] == "fail2ban" && args[3] == "maxretry" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <number>      Maximum login attempts before ban (default: 3)")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "set" && args[1] == "security" && args[2] == "fail2ban" && args[3] == "bantime" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <seconds>     Ban duration in seconds (default: 600)")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "set" && args[1] == "security" && args[2] == "ssh-key" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <username>    Username to add SSH key for")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "set" && args[1] == "security" && args[2] == "ssh-password-auth" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  enable        Enable SSH password authentication")
+			fmt.Println("  disable       Disable SSH password authentication")
 			return
 		}
 
@@ -1320,6 +1412,54 @@ func showHelp(line string) {
 		if len(args) == 3 && args[0] == "set" && args[1] == "snmp" && args[2] == "disable" {
 			fmt.Println("Possible completions:")
 			fmt.Println("  <cr>          Disable SNMP agent")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "set" && args[1] == "snmp" && args[2] == "community" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <string>      SNMP community string")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "set" && args[1] == "snmp" && args[2] == "location" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <string>      Physical location description")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "set" && args[1] == "snmp" && args[2] == "contact" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <email>       System contact email")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "set" && args[1] == "snmp" && args[2] == "polling-interval" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <seconds>     VPP stats polling interval")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "set" && args[1] == "snmp" && args[2] == "community" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <string>      SNMP community string for read-only access")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "set" && args[1] == "snmp" && args[2] == "location" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <string>      Physical location description")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "set" && args[1] == "snmp" && args[2] == "contact" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <email>       System contact email address")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "set" && args[1] == "snmp" && args[2] == "polling-interval" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <seconds>     VPP stats polling interval (default: 30)")
 			return
 		}
 
@@ -1358,15 +1498,13 @@ func showHelp(line string) {
 
 		if len(args) == 3 && args[0] == "set" && args[1] == "system" && args[2] == "time-zone" {
 			fmt.Println("Possible completions:")
-			fmt.Println("  <timezone>    Timezone (e.g., Asia/Singapore, UTC)")
-			fmt.Println("\nTip: Use 'timedatectl list-timezones' to see all available zones")
+			fmt.Println("  <timezone>    Timezone (e.g., Asia/Jakarta, UTC)")
 			return
 		}
 
 		if len(args) == 3 && args[0] == "set" && args[1] == "system" && args[2] == "clock" {
 			fmt.Println("Possible completions:")
-			fmt.Println("  <time>        Time in format: YYYY-MM-DD HH:MM:SS")
-			fmt.Println("\nExample: set system clock 2024-01-15 14:30:00")
+			fmt.Println("  <time>        Time in format YYYY-MM-DD HH:MM:SS")
 			return
 		}
 
@@ -1377,7 +1515,14 @@ func showHelp(line string) {
 		}
 
 		if len(args) == 3 && args[0] == "set" && args[1] == "system" && args[2] == "ntp" {
+			fmt.Println("Possible completions:")
 			fmt.Println("  server        Add NTP server")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "set" && args[1] == "system" && args[2] == "ntp" && args[3] == "server" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <hostname>    NTP server address (e.g., pool.ntp.org)")
 			return
 		}
 
@@ -1393,8 +1538,6 @@ func showHelp(line string) {
 			output.WriteString("  system        System information\n")
 			output.WriteString("  traffic       Interface traffic\n")
 			output.WriteString("  users         CLI users\n")
-			output.WriteString("\n")
-
 			vppCmd := exec.Command("vppctl", "show", "?")
 			if vppOutput, err := vppCmd.CombinedOutput(); err == nil && len(vppOutput) > 0 {
 				vppStr := strings.TrimSpace(string(vppOutput))
@@ -1429,6 +1572,7 @@ func showHelp(line string) {
 
 		if len(args) == 2 && args[0] == "show" && args[1] == "system" {
 			fmt.Println("  <cr>          System information")
+			fmt.Println("  commit        Commit history")
 			fmt.Println("  logging       Audit logs")
 			fmt.Println("  time          Date, time, timezone, NTP")
 			return
@@ -1442,6 +1586,42 @@ func showHelp(line string) {
 			fmt.Println("  last          Show last N lines")
 			fmt.Println("  today         Today's logs")
 			fmt.Println("  user          Filter by user")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "show" && args[1] == "system" && args[2] == "commit" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Show commit history")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "show" && args[1] == "system" && args[2] == "time" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Show current time and timezone")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "show" && args[1] == "traffic" && args[2] == "interface" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <interface>   Interface name for traffic monitoring")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "show" && args[1] == "system" && args[2] == "commit" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Show commit history")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "show" && args[1] == "system" && args[2] == "time" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Show current time and timezone")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "show" && args[1] == "traffic" && args[2] == "interface" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <interface>   Interface name for traffic monitoring")
 			return
 		}
 
@@ -1509,13 +1689,38 @@ func showHelp(line string) {
 
 		if len(args) == 2 && args[0] == "show" && args[1] == "configuration" {
 			fmt.Println("Possible completions:")
-			fmt.Println("  <cr>          Current VPP configuration")
+			fmt.Println("  <cr>          Display current configuration")
+			return
+		}
+
+		if len(args) == 2 && args[0] == "show" && args[1] == "log" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Show VPP log")
+			return
+		}
+
+		if len(args) == 2 && args[0] == "show" && args[1] == "logging" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Show VPP logging configuration")
+			return
+		}
+
+		if len(args) == 2 && args[0] == "show" && args[1] == "version" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Show FloofOS and VPP version")
 			return
 		}
 
 		if len(args) == 1 && args[0] == "commit" {
+			fmt.Println("Possible completions:")
 			fmt.Println("  <cr>          Commit configuration")
 			fmt.Println("  comment       Add commit comment")
+			return
+		}
+
+		if len(args) == 2 && args[0] == "commit" && args[1] == "comment" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <comment>     Commit description")
 			return
 		}
 
@@ -1526,8 +1731,6 @@ func showHelp(line string) {
 			output.WriteString("                Delete CLI user\n")
 			output.WriteString("  security [ firewall | ssh-key ]\n")
 			output.WriteString("                Delete security configurations\n")
-			output.WriteString("\n")
-
 			vppCmd := exec.Command("vppctl", "delete", "?")
 			if vppOutput, err := vppCmd.CombinedOutput(); err == nil && len(vppOutput) > 0 {
 				vppStr := strings.TrimSpace(string(vppOutput))
@@ -1540,6 +1743,18 @@ func showHelp(line string) {
 			return
 		}
 
+		if len(args) == 2 && args[0] == "delete" && args[1] == "user" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <username>    Username to delete")
+			return
+		}
+
+		if len(args) == 2 && args[0] == "delete" && args[1] == "user" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <username>    Username to delete")
+			return
+		}
+
 		if len(args) == 2 && args[0] == "delete" && args[1] == "security" {
 			fmt.Println("Possible completions:")
 			fmt.Println("  firewall rule <name>")
@@ -1549,15 +1764,57 @@ func showHelp(line string) {
 			return
 		}
 
+		if len(args) == 3 && args[0] == "delete" && args[1] == "security" && args[2] == "firewall" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  rule <name>   Delete firewall rule by name")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "delete" && args[1] == "security" && args[2] == "ssh-key" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <username>    Delete SSH key for user")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "delete" && args[1] == "security" && args[2] == "firewall" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  rule <name>   Delete firewall rule by name")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "delete" && args[1] == "security" && args[2] == "ssh-key" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <username>    Delete SSH key for user")
+			return
+		}
+
 		if len(args) == 1 && args[0] == "backup" {
-			fmt.Println("  create        Create named backup")
-			fmt.Println("  restore       Restore named backup")
+			fmt.Println("Possible completions:")
+			fmt.Println("  export <name> [path <path>]")
+			fmt.Println("                Export backup as .tar.gz")
+			fmt.Println("  import <name> [path <path>]")
+			fmt.Println("                Import backup from .tar.gz")
+			return
+		}
+
+		if len(args) == 2 && args[0] == "backup" && args[1] == "export" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <name>        Backup name")
+			fmt.Println("  path          Custom export path")
+			return
+		}
+
+		if len(args) == 2 && args[0] == "backup" && args[1] == "import" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <name>        Backup name to import")
+			fmt.Println("  path          Custom import path")
 			return
 		}
 
 		if len(args) == 1 && args[0] == "rollback" {
-			fmt.Println("  <cr>          Rollback to commit 0")
-			fmt.Println("  0-49          Rollback to specific commit")
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Rollback to previous commit")
+			fmt.Println("  <0-49>        Rollback to specific commit number")
 			return
 		}
 
@@ -1578,8 +1835,6 @@ func showHelp(line string) {
 			output.WriteString("Possible completions:\n")
 			output.WriteString("  user <username> password <password> [ssh-key <key>]\n")
 			output.WriteString("                Create new CLI user with optional SSH key\n")
-			output.WriteString("\n")
-
 			vppCmd := exec.Command("vppctl", "create", "?")
 			if vppOutput, err := vppCmd.CombinedOutput(); err == nil && len(vppOutput) > 0 {
 				vppStr := strings.TrimSpace(string(vppOutput))
@@ -1598,6 +1853,25 @@ func showHelp(line string) {
 			return
 		}
 
+		if len(args) == 3 && args[0] == "create" && args[1] == "user" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  password      Set password for user")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "create" && args[1] == "user" && args[3] == "password" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <password>    Password for new user")
+			return
+		}
+
+		if len(args) >= 5 && args[0] == "create" && args[1] == "user" && args[3] == "password" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Create user with password only")
+			fmt.Println("  ssh-key       Add SSH public key")
+			return
+		}
+
 		if len(args) == 1 && args[0] == "traceroute" {
 			showTracerouteHelp()
 			return
@@ -1610,14 +1884,40 @@ func showHelp(line string) {
 				return
 			}
 			if len(args) == 2 && args[1] == "install" {
-				fmt.Println("system install - Install FloofOS to disk")
-				fmt.Println("")
-				fmt.Println("This command will install FloofOS to permanent storage.")
-				fmt.Println("All data on the target disk will be erased.")
-				fmt.Println("")
-				fmt.Println("Usage: system install")
+				fmt.Println("Possible completions:")
+				fmt.Println("  <cr>          Install FloofOS to disk")
 				return
 			}
+		}
+
+		if len(args) == 1 && args[0] == "configure" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Enter configuration mode")
+			return
+		}
+
+		if len(args) == 1 && args[0] == "exit" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Exit current mode")
+			return
+		}
+
+		if len(args) == 1 && args[0] == "end" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Exit configuration mode")
+			return
+		}
+
+		if len(args) == 1 && args[0] == "quit" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Exit FloofOS CLI")
+			return
+		}
+
+		if len(args) == 1 && args[0] == "help" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Display help")
+			return
 		}
 	}
 
@@ -1648,8 +1948,6 @@ func showHelp(line string) {
 			output.WriteString("  show                  Show configuration and status\n")
 			output.WriteString("  system                System operations\n")
 			output.WriteString("  traceroute            Trace route to destination\n")
-			output.WriteString("\n")
-
 			vppCmd := exec.Command("vppctl", "?")
 			if vppOutput, err := vppCmd.CombinedOutput(); err == nil && len(vppOutput) > 0 {
 				vppStr := strings.TrimSpace(string(vppOutput))
@@ -2223,33 +2521,39 @@ func executeFloofOS(line string) {
 
 	case "backup":
 		if len(args) < 2 {
-			fmt.Println("Usage: backup <create|restore> <name>")
+			fmt.Println("Usage: backup <export|import> <name> [path <path>]")
 			return
 		}
 
 		subCmd := args[1]
 		switch subCmd {
-		case "create":
+		case "export":
 			if len(args) < 3 {
-				fmt.Println("Usage: backup create <name>")
+				fmt.Println("Usage: backup export <name> [path <path>]")
 				return
 			}
-			createNamedBackup(args[2])
+			name := args[2]
+			exportPath := backupDir
+			if len(args) >= 5 && args[3] == "path" {
+				exportPath = args[4]
+			}
+			backupExport(name, exportPath)
 
-		case "restore":
+		case "import":
 			if len(args) < 3 {
-				fmt.Println("Usage: backup restore <name>")
-				fmt.Println("Type 'backup restore ?' for available backups")
+				fmt.Println("Usage: backup import <name> [path <path>]")
+				fmt.Println("Type 'show backups' for available backups")
 				return
 			}
-			if args[2] == "?" {
-				listNamedBackups()
-				return
+			name := args[2]
+			importPath := ""
+			if len(args) >= 5 && args[3] == "path" {
+				importPath = args[4]
 			}
-			restoreNamedBackup(args[2])
+			backupImport(name, importPath)
 
 		default:
-			fmt.Println("Unknown backup command. Use: create, restore")
+			fmt.Println("Unknown backup command. Use: export, import")
 		}
 
 	case "rollback":
@@ -2395,7 +2699,7 @@ func executeFloofOS(line string) {
 		} else if len(args) >= 3 && args[1] == "system" && args[2] == "logging" {
 			showSystemLog(args[3:])
 		} else if len(args) >= 3 && args[1] == "system" && args[2] == "commit" {
-			showSystemLog([]string{"commit"})
+			showCommitHistory()
 		} else if len(args) >= 3 && args[1] == "system" && args[2] == "time" {
 			showSystemTime()
 		} else if len(args) >= 2 && args[1] == "system" {
@@ -2999,10 +3303,11 @@ func showConfiguration() {
 				continue
 			}
 			username := parts[0]
-			uid := parts[2]
+			uidStr := parts[2]
 			shell := parts[6]
 
-			if uid < "1000" {
+			uidNum, err := strconv.Atoi(uidStr)
+			if err != nil || uidNum < 1000 {
 				continue
 			}
 			if username == "nobody" || username == "nogroup" || username == "nfsnobody" {
@@ -3153,6 +3458,7 @@ func showConfiguration() {
 		output.WriteString("!\n")
 	}
 
+	output.WriteString("end\n")
 	printWithPager(output.String())
 }
 
@@ -3417,7 +3723,10 @@ func isFloofOSCommand(line string) bool {
 		return false
 	}
 
-	if firstWord == "show" && len(args) > 1 {
+	if firstWord == "show" {
+		if len(args) == 1 {
+			return true
+		}
 		secondWord := args[1]
 		if secondWord == "configuration" || secondWord == "backups" || secondWord == "backup" ||
 			secondWord == "system" || secondWord == "resource" || secondWord == "users" || secondWord == "log" ||
@@ -3630,6 +3939,36 @@ func showSystemTime() {
 		fmt.Printf("Zone file:   %s", string(tzData))
 	}
 
+	fmt.Println()
+}
+
+func showCommitHistory() {
+	fmt.Println("Commit History (last 50 commits):")
+	fmt.Println()
+
+	hasCommits := false
+	for i := 0; i < maxRollbacks; i++ {
+		rollbackPath := fmt.Sprintf("%s/%d", rollbackDir, i)
+		if info, err := os.Stat(rollbackPath); err == nil {
+			modTime := info.ModTime().Format("2006-01-02 15:04:05")
+			current := ""
+			if i == 0 {
+				current = " (current)"
+			}
+
+			comment := ""
+			if commentData, err := os.ReadFile(rollbackPath + ".comment"); err == nil && len(commentData) > 0 {
+				comment = fmt.Sprintf(" \"%s\"", strings.TrimSpace(string(commentData)))
+			}
+
+			fmt.Printf("  %-3d %s%s%s\n", i, modTime, current, comment)
+			hasCommits = true
+		}
+	}
+
+	if !hasCommits {
+		fmt.Println("  (no commit history)")
+	}
 	fmt.Println()
 }
 
@@ -3908,28 +4247,11 @@ func printWithPager(output string) {
 }
 
 func showTracerouteHelp() {
-	help := `
-traceroute - Trace route to destination
-
-Usage:
-  traceroute <address>                      Trace route to destination
-  traceroute <address> asn                  Include ASN information
-  traceroute <address> source <ip>          Use specific source IP
-  traceroute <address> interface <ifname>   Use specific interface
-
-Options:
-  <address>       Destination IP address or hostname
-  asn             Show AS (Autonomous System) for each hop
-  source <ip>     Source IP address to use
-  interface <if>  Source interface to use
-
-Examples:
-  traceroute 1.1.1.1
-  traceroute 8.8.8.8 asn
-  traceroute 8.8.8.8 source 10.0.0.1
-  traceroute cloudflare.com interface ge0
-`
-	printWithPager(help)
+	fmt.Println("Possible completions:")
+	fmt.Println("  <address>       Destination IP address or hostname")
+	fmt.Println("  asn             Show AS for each hop")
+	fmt.Println("  source          Source IP address")
+	fmt.Println("  interface       Source interface")
 }
 
 func executePing(args []string) {
@@ -4190,6 +4512,12 @@ var configFiles = []string{
 	"/etc/vpp/config/vppcfg.vpp",
 	"/etc/vpp/config/tail.vpp",
 	"/etc/vpp/dataplane.yaml",
+	"/etc/floofctl/users.json",
+	"/etc/floofctl/log.conf",
+	"/etc/hostname",
+	"/etc/timezone",
+	"/etc/nftables.d/floofos.nft",
+	"/etc/snmp/snmpd-dataplane.conf",
 }
 
 func initBackupSystem() {
@@ -4228,7 +4556,7 @@ func createAutoBackup(comment string) {
 	}
 }
 
-func createNamedBackup(name string) {
+func backupExport(name string, exportPath string) {
 	initBackupSystem()
 
 	if name == "" || strings.Contains(name, "/") || strings.Contains(name, "..") {
@@ -4236,42 +4564,106 @@ func createNamedBackup(name string) {
 		return
 	}
 
-	backupPath := fmt.Sprintf("%s/%s", backupDir, name)
+	os.MkdirAll(exportPath, 0755)
 
-	if _, err := os.Stat(backupPath); err == nil {
-		fmt.Printf("Error: Backup '%s' already exists\n", name)
+	tarFile := fmt.Sprintf("%s/%s.tar.gz", exportPath, name)
+
+	if _, err := os.Stat(tarFile); err == nil {
+		fmt.Printf("Error: Backup '%s' already exists at %s\n", name, tarFile)
 		return
 	}
 
-	os.MkdirAll(backupPath, 0755)
+	tempDir := fmt.Sprintf("/tmp/floofos-backup-%s", name)
+	os.RemoveAll(tempDir)
+	os.MkdirAll(tempDir, 0755)
+	defer os.RemoveAll(tempDir)
 
+	fileCount := 0
 	for _, file := range configFiles {
 		data, err := os.ReadFile(file)
 		if err == nil {
 			filename := getFilename(file)
-			os.WriteFile(fmt.Sprintf("%s/%s", backupPath, filename), data, 0644)
+			os.WriteFile(fmt.Sprintf("%s/%s", tempDir, filename), data, 0644)
+			fileCount++
 		}
 	}
 
-	fmt.Printf("Backup created: %s\n", name)
-}
-
-func restoreNamedBackup(name string) {
-	backupPath := fmt.Sprintf("%s/%s", backupDir, name)
-
-	if _, err := os.Stat(backupPath); err != nil {
-		fmt.Printf("Error: Backup '%s' not found\n", name)
-		fmt.Println("Type 'backup restore ?' for available backups")
+	if fileCount == 0 {
+		fmt.Println("Error: No config files found to backup")
 		return
 	}
 
-	if !restoreConfigFiles(backupPath) {
-		fmt.Println("Configuration restore failed")
+	tarCmd := exec.Command("tar", "-czf", tarFile, "-C", tempDir, ".")
+	if err := tarCmd.Run(); err != nil {
+		fmt.Printf("Error creating backup archive: %v\n", err)
+		return
+	}
+
+	auditLogInfo(fmt.Sprintf("Backup exported: %s to %s", name, tarFile))
+	fmt.Printf("Backup exported: %s\n", tarFile)
+	fmt.Printf("Files backed up: %d\n", fileCount)
+}
+
+func backupImport(name string, importPath string) {
+	initBackupSystem()
+
+	var tarFile string
+	if importPath != "" {
+		if strings.HasSuffix(importPath, ".tar.gz") {
+			tarFile = importPath
+		} else {
+			tarFile = fmt.Sprintf("%s/%s.tar.gz", importPath, name)
+		}
+	} else {
+		tarFile = fmt.Sprintf("%s/%s.tar.gz", backupDir, name)
+	}
+
+	if _, err := os.Stat(tarFile); err != nil {
+		fmt.Printf("Error: Backup '%s' not found\n", tarFile)
+		fmt.Println("Use 'show backups' to list available backups")
+		return
+	}
+
+	tempDir := fmt.Sprintf("/tmp/floofos-restore-%d", time.Now().Unix())
+	os.MkdirAll(tempDir, 0755)
+	defer os.RemoveAll(tempDir)
+
+	tarCmd := exec.Command("tar", "-xzf", tarFile, "-C", tempDir)
+	if err := tarCmd.Run(); err != nil {
+		fmt.Printf("Error extracting backup archive: %v\n", err)
+		return
+	}
+
+	restoredCount := 0
+	for _, file := range configFiles {
+		filename := getFilename(file)
+		backupFile := fmt.Sprintf("%s/%s", tempDir, filename)
+
+		data, err := os.ReadFile(backupFile)
+		if err != nil {
+			continue
+		}
+
+		dir := filepath.Dir(file)
+		os.MkdirAll(dir, 0755)
+
+		if err := os.WriteFile(file, data, 0644); err != nil {
+			fmt.Printf("Warning: Failed to restore %s: %v\n", file, err)
+			continue
+		}
+		restoredCount++
+	}
+
+	if restoredCount == 0 {
+		fmt.Println("Error: No files were restored from backup")
 		return
 	}
 
 	hasUnsavedChanges = true
-	fmt.Printf("Configuration loaded from backup: %s\n", name)
+	auditLogInfo(fmt.Sprintf("Backup imported: %s (%d files)", name, restoredCount))
+	fmt.Printf("Configuration imported from: %s\n", tarFile)
+	fmt.Printf("Files restored: %d\n", restoredCount)
+	fmt.Println()
 	fmt.Println("Run 'commit' to apply changes")
 	fmt.Println("Reboot required after commit: run 'system reboot'")
 }
@@ -4497,29 +4889,45 @@ func listNamedBackups() {
 		return
 	}
 
+	found := false
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".tar.gz") {
 			info, _ := entry.Info()
 			modTime := info.ModTime().Format("2006-01-02 15:04:05")
-			fmt.Printf("  %-30s %s\n", entry.Name(), modTime)
+			name := strings.TrimSuffix(entry.Name(), ".tar.gz")
+			size := info.Size() / 1024
+			fmt.Printf("  %-25s %s  %dKB\n", name, modTime, size)
+			found = true
 		}
+	}
+	if !found {
+		fmt.Println("  (no backups)")
 	}
 	fmt.Println()
 }
 
 func showAllBackups() {
-	fmt.Println("Custom Backups:")
+	fmt.Println("Exported Backups:")
+	fmt.Printf("  Location: %s\n", backupDir)
+	fmt.Println()
 
 	entries, err := os.ReadDir(backupDir)
 	if err != nil || len(entries) == 0 {
 		fmt.Println("  (no backups)")
 	} else {
+		found := false
 		for _, entry := range entries {
-			if entry.IsDir() {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".tar.gz") {
 				info, _ := entry.Info()
 				modTime := info.ModTime().Format("2006-01-02 15:04:05")
-				fmt.Printf("  %-30s %s\n", entry.Name(), modTime)
+				name := strings.TrimSuffix(entry.Name(), ".tar.gz")
+				size := info.Size() / 1024
+				fmt.Printf("  %-25s %s  %dKB\n", name, modTime, size)
+				found = true
 			}
+		}
+		if !found {
+			fmt.Println("  (no backups)")
 		}
 	}
 
