@@ -1,5 +1,5 @@
 # FloofOS CLI
-[![Go Report Card](https://goreportcard.com/badge/github.com/floof-os/floofos-cli)](https://goreportcard.com/report/github.com/floof-os/floofos-cli)
+[![Go Report Card](https://goreportcard.com/badge/github.com/floof-os/floofos-cli)](https://goreportcard.com/report/github.com/floof-os/floofos-cli) [![Go Reference](https://pkg.go.dev/badge/github.com/floof-os/floofos-cli.svg)](https://pkg.go.dev/github.com/floof-os/floofos-cli)
 
 ## License
 
