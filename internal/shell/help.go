@@ -21,13 +21,13 @@ import (
 
 func HandleHelpRequest(command string) error {
 	cleanCommand := detector.GetCommandWithoutHelp(command)
-	
+
 	if strings.TrimSpace(cleanCommand) == "" {
 		return showGeneralHelp()
 	}
-	
+
 	cmdType := detector.DetectCommandType(cleanCommand)
-	
+
 	switch cmdType {
 	case detector.VPP:
 		return showVPPHelp(cleanCommand)
@@ -44,10 +44,10 @@ func showGeneralHelp() error {
 	color.Cyan("FloofCTL Help System")
 	color.Cyan("====================")
 	fmt.Println()
-	
+
 	color.White("Available Command Types:")
 	fmt.Println()
-	
+
 	color.Green("Built-in Commands:")
 	fmt.Println("  help                  - Show help information")
 	fmt.Println("  status                - Show service status")
@@ -55,7 +55,7 @@ func showGeneralHelp() error {
 	fmt.Println("  clear/cls             - Clear screen")
 	fmt.Println("  exit/quit             - Exit FloofCTL")
 	fmt.Println()
-	
+
 	color.Green("VPP Commands (vppctl pass-through):")
 	fmt.Println("  show <object>         - Display VPP information")
 	fmt.Println("  set <parameter>       - Configure VPP settings")
@@ -63,14 +63,14 @@ func showGeneralHelp() error {
 	fmt.Println("  create <interface>    - Create VPP interfaces")
 	fmt.Println("  <command>?            - Get help for specific VPP command")
 	fmt.Println()
-	
+
 	color.Green("BIRD Commands (birdc pass-through):")
 	fmt.Println("  show <object>         - Display BIRD information")
 	fmt.Println("  configure <action>    - Configure BIRD")
 	fmt.Println("  enable/disable <proto> - Control protocols")
 	fmt.Println("  <command>?            - Get help for specific BIRD command")
 	fmt.Println()
-	
+
 	color.Green("FloofOS Commands:")
 	fmt.Println("  backup <action>       - Configuration backup management")
 	fmt.Println("  generate <type>       - Generate configurations")
@@ -79,13 +79,13 @@ func showGeneralHelp() error {
 	fmt.Println("  config <action>       - Configuration management")
 	fmt.Println("  service <action>      - Service management")
 	fmt.Println()
-	
+
 	color.Yellow("Tips:")
 	fmt.Println("  - Use TAB for command completion")
 	fmt.Println("  - Append ? to any command for specific help")
 	fmt.Println("  - Commands are automatically routed to appropriate services")
 	fmt.Println("  - Type 'help <command>' for detailed command help")
-	
+
 	return nil
 }
 
@@ -93,25 +93,25 @@ func showVPPHelp(command string) error {
 	color.Green("VPP Command Help")
 	color.Green("================")
 	fmt.Println()
-	
+
 	if command == "" {
 		color.White("VPP (Vector Packet Processing) Commands:")
 		fmt.Println()
 		showVPPCommandCategories()
 		return nil
 	}
-	
+
 	client := vpp.NewClient()
 	if client.IsAvailable() {
 		color.White("Getting help from VPP for: %s", command)
 		fmt.Println()
-		
+
 		output, err := client.GetHelp(command)
 		if err != nil {
 			color.Red("Error getting VPP help: %v", err)
 			return showVPPCommandHelp(command)
 		}
-		
+
 		fmt.Println(output)
 		return nil
 	} else {
@@ -124,25 +124,25 @@ func showBIRDHelp(command string) error {
 	color.Green("BIRD Command Help")
 	color.Green("=================")
 	fmt.Println()
-	
+
 	if command == "" {
 		color.White("BIRD (BIRD Internet Routing Daemon) Commands:")
 		fmt.Println()
 		showBIRDCommandCategories()
 		return nil
 	}
-	
+
 	client := bird.NewClient()
 	if client.IsAvailable() {
 		color.White("Getting help from BIRD for: %s", command)
 		fmt.Println()
-		
+
 		output, err := client.GetHelp(command)
 		if err != nil {
 			color.Red("Error getting BIRD help: %v", err)
 			return showBIRDCommandHelp(command)
 		}
-		
+
 		fmt.Println(output)
 		return nil
 	} else {
@@ -155,13 +155,13 @@ func showFloofOSHelp(command string) error {
 	color.Green("FloofOS Command Help")
 	color.Green("====================")
 	fmt.Println()
-	
+
 	args := strings.Fields(command)
 	if len(args) == 0 {
 		showFloofOSCommandCategories()
 		return nil
 	}
-	
+
 	switch args[0] {
 	case "backup":
 		return showBackupHelp()
@@ -193,18 +193,18 @@ func showCommandHelp(command string) error {
 	color.Yellow("Command Help")
 	color.Yellow("============")
 	fmt.Println()
-	
+
 	color.White("Unknown command: %s", command)
 	fmt.Println()
 	color.White("This command was not recognized as a VPP, BIRD, or FloofOS command.")
 	color.White("It will be attempted as both VPP and BIRD commands when executed.")
 	fmt.Println()
-	
+
 	color.White("Suggestions:")
 	fmt.Println("  - Check spelling and try TAB completion")
 	fmt.Println("  - Use 'help' to see all available commands")
 	fmt.Println("  - Try 'show ?' or 'configure ?' for VPP/BIRD commands")
-	
+
 	return nil
 }
 
@@ -217,13 +217,13 @@ func showVPPCommandCategories() {
 	fmt.Println("  show hardware         - Hardware information")
 	fmt.Println("  show memory           - Memory usage")
 	fmt.Println()
-	
+
 	color.White("Set Commands:")
 	fmt.Println("  set interface state   - Interface up/down")
 	fmt.Println("  set ip neighbor       - Add ARP entry")
 	fmt.Println("  set logging level     - Change log level")
 	fmt.Println()
-	
+
 	color.White("Create/Delete Commands:")
 	fmt.Println("  create loopback       - Create loopback interface")
 	fmt.Println("  create bridge-domain  - Create bridge domain")
@@ -237,13 +237,13 @@ func showBIRDCommandCategories() {
 	fmt.Println("  show route            - Routing table")
 	fmt.Println("  show interfaces       - Interface status")
 	fmt.Println()
-	
+
 	color.White("Configure Commands:")
 	fmt.Println("  configure             - Reload configuration")
 	fmt.Println("  configure soft        - Soft reload")
 	fmt.Println("  configure check       - Check configuration")
 	fmt.Println()
-	
+
 	color.White("Protocol Control:")
 	fmt.Println("  enable <protocol>     - Enable protocol")
 	fmt.Println("  disable <protocol>    - Disable protocol")
@@ -257,13 +257,13 @@ func showFloofOSCommandCategories() {
 	fmt.Println("  rollback to <id>      - Rollback to backup")
 	fmt.Println("  show configuration    - Show current config")
 	fmt.Println()
-	
+
 	color.White("Generation:")
 	fmt.Println("  generate config       - Generate base configuration")
 	fmt.Println("  generate template     - Generate config template")
 	fmt.Println("  generate keys         - Generate security keys")
 	fmt.Println()
-	
+
 	color.White("System Management:")
 	fmt.Println("  service start <name>  - Start system service")
 	fmt.Println("  system status         - Show system status")
@@ -422,7 +422,7 @@ func showVPPCommandHelp(command string) error {
 	if len(args) == 0 {
 		return nil
 	}
-	
+
 	switch args[0] {
 	case "show":
 		color.White("VPP Show Command Help")
@@ -436,7 +436,7 @@ func showVPPCommandHelp(command string) error {
 		color.White("VPP Command: %s", command)
 		fmt.Println("No specific help available. Try executing with ? for VPP help.")
 	}
-	
+
 	return nil
 }
 
@@ -445,7 +445,7 @@ func showBIRDCommandHelp(command string) error {
 	if len(args) == 0 {
 		return nil
 	}
-	
+
 	switch args[0] {
 	case "show":
 		color.White("BIRD Show Command Help")
@@ -459,6 +459,6 @@ func showBIRDCommandHelp(command string) error {
 		color.White("BIRD Command: %s", command)
 		fmt.Println("No specific help available. Try executing with ? for BIRD help.")
 	}
-	
+
 	return nil
 }

@@ -31,12 +31,12 @@ func ParseOutput(command string, output string) *ParsedOutput {
 		Data:    make(map[string]interface{}),
 		Raw:     output,
 	}
-	
+
 	args := strings.Fields(command)
 	if len(args) == 0 {
 		return parsed
 	}
-	
+
 	switch args[0] {
 	case "show":
 		if len(args) > 1 {
@@ -47,7 +47,7 @@ func ParseOutput(command string, output string) *ParsedOutput {
 	default:
 		parsed.Data["output"] = output
 	}
-	
+
 	return parsed
 }
 
@@ -82,13 +82,13 @@ func parseSetCommand(args []string, output string, parsed *ParsedOutput) {
 func parseVersionOutput(output string, parsed *ParsedOutput) {
 	version := make(map[string]string)
 	scanner := bufio.NewScanner(strings.NewReader(output))
-	
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
-		
+
 		if strings.HasPrefix(line, "vpp v") {
 			parts := strings.Fields(line)
 			if len(parts) >= 2 {
@@ -97,34 +97,34 @@ func parseVersionOutput(output string, parsed *ParsedOutput) {
 			version["build_info"] = line
 		}
 	}
-	
+
 	parsed.Data["version"] = version
 }
 
 func parseInterfaceOutput(output string, parsed *ParsedOutput) {
 	interfaces := make([]map[string]interface{}, 0)
 	scanner := bufio.NewScanner(strings.NewReader(output))
-	
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "Name") {
 			continue
 		}
-		
+
 		fields := strings.Fields(line)
 		if len(fields) >= 6 {
 			iface := map[string]interface{}{
-				"name":       fields[0],
-				"idx":        fields[1],
-				"admin":      fields[2],
-				"link":       fields[3],
-				"mtu":        fields[4],
-				"mac":        fields[5],
+				"name":  fields[0],
+				"idx":   fields[1],
+				"admin": fields[2],
+				"link":  fields[3],
+				"mtu":   fields[4],
+				"mac":   fields[5],
 			}
 			interfaces = append(interfaces, iface)
 		}
 	}
-	
+
 	parsed.Data["interfaces"] = interfaces
 }
 
@@ -142,13 +142,13 @@ func parseIPOutput(subcommand string, output string, parsed *ParsedOutput) {
 func parseIPFibOutput(output string, parsed *ParsedOutput) {
 	routes := make([]map[string]interface{}, 0)
 	scanner := bufio.NewScanner(strings.NewReader(output))
-	
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.Contains(line, "Table") {
 			continue
 		}
-		
+
 		if strings.Contains(line, "via") {
 			parts := strings.Fields(line)
 			if len(parts) >= 3 {
@@ -160,20 +160,20 @@ func parseIPFibOutput(output string, parsed *ParsedOutput) {
 			}
 		}
 	}
-	
+
 	parsed.Data["routes"] = routes
 }
 
 func parseIPNeighborsOutput(output string, parsed *ParsedOutput) {
 	neighbors := make([]map[string]interface{}, 0)
 	scanner := bufio.NewScanner(strings.NewReader(output))
-	
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
-		
+
 		fields := strings.Fields(line)
 		if len(fields) >= 3 {
 			neighbor := map[string]interface{}{
@@ -185,35 +185,35 @@ func parseIPNeighborsOutput(output string, parsed *ParsedOutput) {
 			neighbors = append(neighbors, neighbor)
 		}
 	}
-	
+
 	parsed.Data["neighbors"] = neighbors
 }
 
 func parseHardwareOutput(output string, parsed *ParsedOutput) {
 	hardware := make(map[string]interface{})
 	scanner := bufio.NewScanner(strings.NewReader(output))
-	
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
-		
+
 		hardware["raw"] = output
 	}
-	
+
 	parsed.Data["hardware"] = hardware
 }
 
 func parseRuntimeOutput(output string, parsed *ParsedOutput) {
 	runtime := make(map[string]interface{})
-	
+
 	uptimeRegex := regexp.MustCompile(`Time now (\d+\.\d+), (.+) since last reset`)
 	if matches := uptimeRegex.FindStringSubmatch(output); len(matches) >= 3 {
 		runtime["current_time"] = matches[1]
 		runtime["uptime"] = matches[2]
 	}
-	
+
 	runtime["raw"] = output
 	parsed.Data["runtime"] = runtime
 }
@@ -221,19 +221,19 @@ func parseRuntimeOutput(output string, parsed *ParsedOutput) {
 func parseMemoryOutput(output string, parsed *ParsedOutput) {
 	memory := make(map[string]interface{})
 	scanner := bufio.NewScanner(strings.NewReader(output))
-	
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
-		
+
 		if strings.Contains(line, "bytes") {
 			memory["raw"] = output
 			break
 		}
 	}
-	
+
 	parsed.Data["memory"] = memory
 }
 
@@ -253,16 +253,16 @@ func (p *ParsedOutput) ToJSON() (string, error) {
 
 func (p *ParsedOutput) ToFormattedString() string {
 	var sb strings.Builder
-	
+
 	sb.WriteString(fmt.Sprintf("Command: %s\n", p.Command))
 	sb.WriteString(fmt.Sprintf("Success: %t\n", p.Success))
-	
+
 	if len(p.Data) > 0 {
 		sb.WriteString("Parsed Data:\n")
 		for key, value := range p.Data {
 			sb.WriteString(fmt.Sprintf("  %s: %v\n", key, value))
 		}
 	}
-	
+
 	return sb.String()
 }

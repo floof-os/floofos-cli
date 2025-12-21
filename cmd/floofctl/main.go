@@ -4518,6 +4518,9 @@ var configFiles = []string{
 	"/etc/timezone",
 	"/etc/nftables.d/floofos.nft",
 	"/etc/snmp/snmpd-dataplane.conf",
+	"/etc/chrony/chrony.conf",
+	"/etc/resolv.conf",
+	"/etc/ssh/sshd_config",
 }
 
 func initBackupSystem() {
@@ -4695,7 +4698,16 @@ func restoreConfigFiles(sourcePath string) bool {
 
 		data, err := os.ReadFile(backupFile)
 		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
 			fmt.Printf("Error: Failed to read %s\n", filename)
+			return false
+		}
+
+		dir := filepath.Dir(file)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			fmt.Printf("Error: Failed to create directory for %s\n", filename)
 			return false
 		}
 

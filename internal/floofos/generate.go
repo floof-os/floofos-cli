@@ -424,10 +424,10 @@ func generateBasicTemplate(isInteractive bool) error {
 		Type:        "system",
 		Version:     "1.0",
 		Variables: map[string]interface{}{
-			"hostname":   "{{.Hostname}}",
-			"domain":     "{{.Domain}}",
-			"router_id":  "{{.RouterID}}",
-			"local_as":   "{{.LocalAS}}",
+			"hostname":  "{{.Hostname}}",
+			"domain":    "{{.Domain}}",
+			"router_id": "{{.RouterID}}",
+			"local_as":  "{{.LocalAS}}",
 		},
 		Template: `# FloofOS Configuration Template
 # Hostname: {{.Hostname}}
@@ -453,11 +453,11 @@ func generateBGPTemplate(isInteractive bool) error {
 		Type:        "protocol",
 		Version:     "1.0",
 		Variables: map[string]interface{}{
-			"peer_name":    "{{.PeerName}}",
-			"peer_ip":      "{{.PeerIP}}",
-			"peer_as":      "{{.PeerAS}}",
-			"local_as":     "{{.LocalAS}}",
-			"description":  "{{.Description}}",
+			"peer_name":   "{{.PeerName}}",
+			"peer_ip":     "{{.PeerIP}}",
+			"peer_as":     "{{.PeerAS}}",
+			"local_as":    "{{.LocalAS}}",
+			"description": "{{.Description}}",
 		},
 		Template: `# BGP Peer: {{.PeerName}}
 protocol bgp {{.PeerName}} {
@@ -475,15 +475,15 @@ protocol bgp {{.PeerName}} {
 
 func generateOSPFTemplate(isInteractive bool) error {
 	tmpl := &ConfigTemplate{
-		Name:        "OSPF Protocol Template", 
+		Name:        "OSPF Protocol Template",
 		Description: "Template for OSPF configuration",
 		Type:        "protocol",
 		Version:     "1.0",
 		Variables: map[string]interface{}{
-			"area_id":     "{{.AreaID}}",
-			"interface":   "{{.Interface}}",
-			"cost":        "{{.Cost}}",
-			"hello_time":  "{{.HelloTime}}",
+			"area_id":    "{{.AreaID}}",
+			"interface":  "{{.Interface}}",
+			"cost":       "{{.Cost}}",
+			"hello_time": "{{.HelloTime}}",
 		},
 		Template: `# OSPF Configuration
 protocol ospf {
@@ -507,7 +507,7 @@ func generateInterfaceTemplate(isInteractive bool) error {
 		Name:        "Interface Template",
 		Description: "Template for interface configuration",
 		Type:        "interface",
-		Version:     "1.0", 
+		Version:     "1.0",
 		Variables: map[string]interface{}{
 			"interface_name": "{{.InterfaceName}}",
 			"ip_address":     "{{.IPAddress}}",

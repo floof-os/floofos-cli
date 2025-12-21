@@ -31,27 +31,27 @@ func NewClient() *Client {
 
 func (c *Client) Execute(args []string) (string, error) {
 	cmd := exec.Command(c.binaryPath, args...)
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(output), fmt.Errorf("vppctl command failed: %w", err)
 	}
-	
+
 	return string(output), nil
 }
 
 func (c *Client) ExecuteWithTimeout(args []string, timeout time.Duration) (string, error) {
 	cmd := exec.Command(c.binaryPath, args...)
-	
+
 	done := make(chan struct{})
 	var output []byte
 	var err error
-	
+
 	go func() {
 		output, err = cmd.CombinedOutput()
 		close(done)
 	}()
-	
+
 	select {
 	case <-done:
 		if err != nil {
@@ -72,7 +72,7 @@ func (c *Client) GetHelp(command string) (string, error) {
 		args = append(args, "?")
 		return c.Execute(args)
 	}
-	
+
 	return c.Execute([]string{"help"})
 }
 
@@ -90,7 +90,7 @@ func (c *Client) GetInterfaces() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return parseInterfaces(output), nil
 }
 
@@ -99,7 +99,7 @@ func (c *Client) GetCommands() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return parseCommands(output), nil
 }
 
@@ -108,26 +108,26 @@ func (c *Client) ExecuteWithHelp(partialCommand string) (string, error) {
 	if len(args) == 0 {
 		return "", fmt.Errorf("empty command")
 	}
-	
+
 	helpArgs := append(args, "?")
 	output, err := c.Execute(helpArgs)
-	
+
 	return output, err
 }
 
 func (c *Client) GetCompletions(partialCommand string) ([]string, error) {
 	args := strings.Fields(partialCommand)
-	
+
 	if len(args) == 0 {
 		return getVPPBaseCommands(), nil
 	}
-	
+
 	helpArgs := append(args, "?")
 	output, err := c.Execute(helpArgs)
 	if err != nil {
 		return getContextualCompletions(args), nil
 	}
-	
+
 	return parseVPPHelp(output), nil
 }
 
@@ -142,9 +142,9 @@ func getContextualCompletions(args []string) []string {
 	if len(args) == 0 {
 		return getVPPBaseCommands()
 	}
-	
+
 	firstWord := args[0]
-	
+
 	switch firstWord {
 	case "show":
 		if len(args) == 1 {
@@ -167,20 +167,20 @@ func getContextualCompletions(args []string) []string {
 			}
 		}
 	}
-	
+
 	return []string{}
 }
 
 func parseVPPHelp(output string) []string {
 	var suggestions []string
 	lines := strings.Split(output, "\n")
-	
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "vpp#") || strings.HasPrefix(line, "DBGvpp#") {
 			continue
 		}
-		
+
 		words := strings.Fields(line)
 		for _, word := range words {
 			if word == "vpp#" || word == "DBGvpp#" || strings.HasPrefix(word, "[") {
@@ -191,39 +191,39 @@ func parseVPPHelp(output string) []string {
 			}
 		}
 	}
-	
+
 	return suggestions
 }
 
 func parseInterfaces(output string) []string {
 	var interfaces []string
 	scanner := bufio.NewScanner(strings.NewReader(output))
-	
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
-		
+
 		fields := strings.Fields(line)
 		if len(fields) > 0 && !strings.HasPrefix(fields[0], "Name") {
 			interfaces = append(interfaces, fields[0])
 		}
 	}
-	
+
 	return interfaces
 }
 
 func parseCommands(output string) []string {
 	var commands []string
 	scanner := bufio.NewScanner(strings.NewReader(output))
-	
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
-		
+
 		fields := strings.Fields(line)
 		if len(fields) > 0 {
 			command := fields[0]
@@ -232,6 +232,6 @@ func parseCommands(output string) []string {
 			}
 		}
 	}
-	
+
 	return commands
 }

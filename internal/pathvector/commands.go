@@ -21,7 +21,7 @@ import (
 
 const (
 	PathvectorConfigPath = "/etc/pathvector.yml"
-	
+
 	MaskedConfigPath = "/tmp/.pv-config-edit"
 )
 
@@ -35,9 +35,9 @@ func SetBGP() error {
 	if err := copyToTemp(); err != nil {
 		return err
 	}
-	
+
 	infoColor.Println("% Opening BGP configuration editor...")
-	
+
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
 		if _, err := exec.LookPath("nano"); err == nil {
@@ -46,47 +46,47 @@ func SetBGP() error {
 			editor = "vi"
 		}
 	}
-	
+
 	cmd := exec.Command(editor, MaskedConfigPath)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	if err := cmd.Run(); err != nil {
 		os.Remove(MaskedConfigPath)
 		return fmt.Errorf("editor error: %w", err)
 	}
-	
+
 	if err := copyFromTemp(); err != nil {
 		os.Remove(MaskedConfigPath)
 		return err
 	}
-	
+
 	os.Remove(MaskedConfigPath)
-	
+
 	successColor.Println("% BGP configuration updated")
 	infoColor.Println("% Run 'commit bgp' to apply changes")
-	
+
 	return nil
 }
 
 func CommitBGP() error {
 	infoColor.Println("% Generating BGP configuration...")
-	
+
 	cmd := exec.Command("pathvector", "generate")
-	
+
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	
+
 	if err := cmd.Run(); err != nil {
 		errorColor.Println("% BGP configuration generation failed:")
 		fmt.Println(stderr.String())
 		return fmt.Errorf("pathvector generate failed: %w", err)
 	}
-	
+
 	successColor.Println("% BGP configuration complete")
-	
+
 	output := stdout.String()
 	if strings.Contains(output, "peers") || strings.Contains(output, "routes") {
 		lines := strings.Split(output, "\n")
@@ -96,7 +96,7 @@ func CommitBGP() error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -104,11 +104,11 @@ func ShowBGPSummary() error {
 	cmd := exec.Command("pathvector", "status")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("pathvector status failed: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -121,18 +121,18 @@ func ShowBGPConfig() error {
 		}
 		return fmt.Errorf("cannot read BGP config: %w", err)
 	}
-	
+
 	fmt.Println()
 	color.New(color.FgYellow, color.Bold).Println("BGP Configuration (pathvector.yml)")
 	fmt.Println(strings.Repeat("=", 70))
-	
+
 	lines := strings.Split(string(content), "\n")
 	for i, line := range lines {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		color.New(color.FgHiBlack).Printf("%4d  ", i+1)
-		
+
 		if strings.HasPrefix(strings.TrimSpace(line), "#") {
 			color.New(color.FgGreen).Println(line)
 		} else if strings.Contains(line, ":") {
@@ -147,7 +147,7 @@ func ShowBGPConfig() error {
 			fmt.Println(line)
 		}
 	}
-	
+
 	fmt.Println()
 	return nil
 }
@@ -157,7 +157,7 @@ func copyToTemp() error {
 	if err != nil {
 		return fmt.Errorf("cannot read config: %w", err)
 	}
-	
+
 	return os.WriteFile(MaskedConfigPath, data, 0600)
 }
 
@@ -166,6 +166,6 @@ func copyFromTemp() error {
 	if err != nil {
 		return fmt.Errorf("cannot read edited config: %w", err)
 	}
-	
+
 	return os.WriteFile(PathvectorConfigPath, data, 0644)
 }

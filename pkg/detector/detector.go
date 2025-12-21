@@ -78,7 +78,7 @@ func DetectCommandType(input string) CommandType {
 
 	normalized := strings.ToLower(strings.TrimSpace(input))
 	words := strings.Fields(normalized)
-	
+
 	if len(words) == 0 {
 		return Unknown
 	}
@@ -86,11 +86,11 @@ func DetectCommandType(input string) CommandType {
 	if isFloofOSCommand(words, normalized) {
 		return FloofOS
 	}
-	
+
 	if isBIRDCommand(words[0], words) {
 		return BIRD
 	}
-	
+
 	return VPP
 }
 
@@ -98,15 +98,15 @@ func isFloofOSCommand(words []string, fullCommand string) bool {
 	if len(words) == 0 {
 		return false
 	}
-	
+
 	firstWord := words[0]
-	
-	if firstWord == "commit" || firstWord == "backup" || 
-	   firstWord == "rollback" || firstWord == "generate" ||
-	   firstWord == "restore" {
+
+	if firstWord == "commit" || firstWord == "backup" ||
+		firstWord == "rollback" || firstWord == "generate" ||
+		firstWord == "restore" {
 		return true
 	}
-	
+
 	if len(words) >= 2 {
 		floofOSPrefixes := []string{
 			"show configuration",
@@ -116,14 +116,14 @@ func isFloofOSCommand(words []string, fullCommand string) bool {
 			"set hostname",
 			"commit bgp",
 		}
-		
+
 		for _, prefix := range floofOSPrefixes {
 			if strings.HasPrefix(fullCommand, prefix) {
 				return true
 			}
 		}
 	}
-	
+
 	return false
 }
 
@@ -133,7 +133,7 @@ func isVPPCommand(firstWord string, words []string) bool {
 			return true
 		}
 	}
-	
+
 	if len(words) >= 2 {
 		secondWord := words[1]
 		switch firstWord {
@@ -161,7 +161,7 @@ func isVPPCommand(firstWord string, words []string) bool {
 			}
 		}
 	}
-	
+
 	return false
 }
 
@@ -175,13 +175,13 @@ func isBIRDCommand(firstWord string, words []string) bool {
 		"restart",
 		"reload",
 	}
-	
+
 	for _, cmd := range birdOnlyCommands {
 		if firstWord == cmd {
 			return true
 		}
 	}
-	
+
 	if len(words) >= 2 && firstWord == "show" {
 		secondWord := words[1]
 		birdShowCommands := []string{
@@ -190,14 +190,14 @@ func isBIRDCommand(firstWord string, words []string) bool {
 			"route",
 			"routes",
 		}
-		
+
 		for _, birdCmd := range birdShowCommands {
 			if secondWord == birdCmd {
 				return true
 			}
 		}
 	}
-	
+
 	return false
 }
 
@@ -228,27 +228,27 @@ func GetCommandWithoutHelp(input string) string {
 func IsAmbiguousCommand(input string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(input))
 	words := strings.Fields(normalized)
-	
+
 	if len(words) < 2 {
 		return false
 	}
-	
+
 	if isFloofOSCommand(words, normalized) {
 		return false
 	}
-	
+
 	ambiguousPatterns := []string{
 		"show memory",
 		"show version",
 		"show status",
 	}
-	
+
 	twoWords := strings.Join(words[:2], " ")
 	for _, pattern := range ambiguousPatterns {
 		if twoWords == pattern {
 			return true
 		}
 	}
-	
+
 	return false
 }

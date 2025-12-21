@@ -75,7 +75,7 @@ func (cm *ConfigManager) BackupConfig(backupName string) error {
 	}
 
 	backupPath := filepath.Join(cm.backupDir, backupName+".yml")
-	
+
 	data, err := ioutil.ReadFile(cm.configPath)
 	if err != nil {
 		return fmt.Errorf("failed to read config file: %w", err)
@@ -90,7 +90,7 @@ func (cm *ConfigManager) BackupConfig(backupName string) error {
 
 func (cm *ConfigManager) RestoreConfig(backupName string) error {
 	backupPath := filepath.Join(cm.backupDir, backupName+".yml")
-	
+
 	if _, err := os.Stat(backupPath); os.IsNotExist(err) {
 		return fmt.Errorf("backup file does not exist: %s", backupPath)
 	}
@@ -187,7 +187,7 @@ func (cm *ConfigManager) ValidateConfigFile(configPath string) error {
 				}
 			}
 			if !validType {
-				return fmt.Errorf("peer %s: invalid type %s (must be one of: %s)", 
+				return fmt.Errorf("peer %s: invalid type %s (must be one of: %s)",
 					peer.Name, peer.Type, strings.Join(validTypes, ", "))
 			}
 		}
