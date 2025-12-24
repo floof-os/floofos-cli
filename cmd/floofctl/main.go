@@ -717,17 +717,16 @@ func main() {
 		}
 	}()
 
-	white := "\033[37m"
 	yellow := "\033[33m"
 	reset := "\033[0m"
 
-	fmt.Println(white + "   ______          ___ ____  ____" + reset)
-	fmt.Println(white + "  / __/ /__  ___  / _// __ \\/ __/" + reset)
-	fmt.Println(white + " / _// / _ \\/ _ \\/ _// /_/ /\\ \\  " + reset)
-	fmt.Println(white + "/_/ /_/\\___/\\___/_/  \\____/___/  " + reset)
+	fmt.Println("   ______          ___ ____  ____")
+	fmt.Println("  / __/ /__  ___  / _// __ \\/ __/")
+	fmt.Println(" / _// / _ \\/ _ \\/ _// /_/ /\\ \\  ")
+	fmt.Println("/_/ /_/\\___/\\___/_/  \\____/___/  ")
 	fmt.Println()
-	fmt.Println(white + "[ Fast Line-rate Offload On Fabric OS ]" + reset)
-	fmt.Println(white + "https://floofos.io | Copyright (c) 2025" + reset)
+	fmt.Println("[ Fast Line-rate Offload On Fabric OS ]")
+	fmt.Println("https://floofos.io | Copyright (c) 2025")
 	fmt.Println()
 	fmt.Println(yellow + "Type ? for context help" + reset)
 	fmt.Println()
