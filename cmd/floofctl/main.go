@@ -717,18 +717,15 @@ func main() {
 		}
 	}()
 
-	yellow := "\033[33m"
-	reset := "\033[0m"
-
 	fmt.Println("   ______          ___ ____  ____")
 	fmt.Println("  / __/ /__  ___  / _// __ \\/ __/")
 	fmt.Println(" / _// / _ \\/ _ \\/ _// /_/ /\\ \\  ")
 	fmt.Println("/_/ /_/\\___/\\___/_/  \\____/___/  ")
 	fmt.Println()
-	fmt.Println("[ Fast Line-rate Offload On Fabric OS ]")
-	fmt.Println("https://floofos.io | Copyright (c) 2025")
+	fmt.Println("Network Operating System")
+	fmt.Println("Copyright (c) 2025 | https://floofos.io")
 	fmt.Println()
-	fmt.Println(yellow + "Type ? for context help" + reset)
+	fmt.Println("Type ? for help")
 	fmt.Println()
 
 	if err := system.RunFirstBootSetup(); err != nil {
