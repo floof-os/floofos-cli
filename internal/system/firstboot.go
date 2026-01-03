@@ -91,7 +91,7 @@ func getVPPInterfaces() []string {
 	var interfaces []string
 	lines := strings.Split(string(output), "\n")
 
-	ifacePattern := regexp.MustCompile(`^(\d+\.?\d*GE\d+/\d+/\d+|GE\d+/\d+/\d+)`)
+	ifacePattern := regexp.MustCompile(`^(\d*\.?\d*GE\d+/\d+/\d+|GE\d+/\d+/\d+)`)
 
 	for _, line := range lines {
 		fields := strings.Fields(line)
@@ -102,6 +102,28 @@ func getVPPInterfaces() []string {
 
 	sort.Strings(interfaces)
 	return interfaces
+}
+
+func vppNameToLinuxName(vppName string) string {
+	pattern := regexp.MustCompile(`^(\d*\.?\d*)(GE)(\d+)/(\d+)/(\d+)$`)
+	matches := pattern.FindStringSubmatch(vppName)
+	if matches == nil {
+		return strings.ToLower(strings.ReplaceAll(vppName, "/", "-"))
+	}
+
+	speedPrefix := matches[1]
+	cardID := matches[3]
+	numa := matches[4]
+	port := matches[5]
+
+	var linuxName string
+	if speedPrefix == "" {
+		linuxName = fmt.Sprintf("ge-%s-%s-%s", cardID, numa, port)
+	} else {
+		linuxName = fmt.Sprintf("%sge-%s-%s-%s", strings.ToLower(speedPrefix), cardID, numa, port)
+	}
+
+	return linuxName
 }
 
 func speedToString(speed int) string {
@@ -125,6 +147,26 @@ func speedToString(speed int) string {
 	default:
 		return "1G"
 	}
+}
+
+func extractSpeedFromName(vppName string) string {
+	pattern := regexp.MustCompile(`^(\d*\.?\d*)(GE)`)
+	matches := pattern.FindStringSubmatch(vppName)
+	if matches == nil || matches[1] == "" {
+		return "1G"
+	}
+	return matches[1] + "G"
+}
+
+func printInterfaceTableHeader(vppWidth, linuxWidth int) {
+	fmt.Printf("  %-*s   %-*s   %-5s   %-4s   %s\n",
+		vppWidth, "VPP Name",
+		linuxWidth, "Linux Name",
+		"Speed", "NUMA", "PCI Address")
+	fmt.Printf("  %s   %s   %s   %s   %s\n",
+		strings.Repeat("─", vppWidth),
+		strings.Repeat("─", linuxWidth),
+		"─────", "────", "────────────────")
 }
 
 func promptFirstBootInput(prompt string, defaultVal string) string {
@@ -158,10 +200,6 @@ func RunFirstBootSetup() error {
 
 	time.Sleep(2 * time.Second)
 
-	fmt.Println()
-	fmt.Println("Initial interface setup")
-	fmt.Println()
-
 	mappings, err := loadInterfaceMap()
 	if err != nil {
 		interfaces := getVPPInterfaces()
@@ -170,11 +208,30 @@ func RunFirstBootSetup() error {
 			return nil
 		}
 
-		fmt.Printf("Detected %d interface(s):\n", len(interfaces))
+		fmt.Printf("Detected %d network interface(s):\n", len(interfaces))
 		fmt.Println()
 
+		maxVPPLen := 12
+		maxLinuxLen := 14
 		for _, iface := range interfaces {
-			fmt.Printf("  %s\n", iface)
+			if len(iface) > maxVPPLen {
+				maxVPPLen = len(iface)
+			}
+			linuxName := vppNameToLinuxName(iface)
+			if len(linuxName) > maxLinuxLen {
+				maxLinuxLen = len(linuxName)
+			}
+		}
+
+		printInterfaceTableHeader(maxVPPLen, maxLinuxLen)
+
+		for _, iface := range interfaces {
+			linuxName := vppNameToLinuxName(iface)
+			speedStr := extractSpeedFromName(iface)
+			fmt.Printf("  %-*s   %-*s   %-5s   %-4s   %s\n",
+				maxVPPLen, iface,
+				maxLinuxLen, linuxName,
+				speedStr, "0", "-")
 		}
 		fmt.Println()
 
@@ -190,8 +247,8 @@ func RunFirstBootSetup() error {
 		success := 0
 		failed := 0
 
-		for i, iface := range interfaces {
-			linuxName := fmt.Sprintf("eth%d", i)
+		for _, iface := range interfaces {
+			linuxName := vppNameToLinuxName(iface)
 			fmt.Printf("Configuring %s -> %s... ", iface, linuxName)
 
 			cmd := exec.Command("vppctl", "lcp", "create", iface, "host-if", linuxName)
@@ -228,11 +285,11 @@ func RunFirstBootSetup() error {
 		return nil
 	}
 
-	fmt.Printf("Detected %d interface(s):\n", len(mappings))
+	fmt.Printf("Detected %d network interface(s):\n", len(mappings))
 	fmt.Println()
 
-	maxVPPLen := 0
-	maxLinuxLen := 0
+	maxVPPLen := 12
+	maxLinuxLen := 14
 	for _, m := range mappings {
 		if len(m.VPPName) > maxVPPLen {
 			maxVPPLen = len(m.VPPName)
@@ -242,13 +299,15 @@ func RunFirstBootSetup() error {
 		}
 	}
 
+	printInterfaceTableHeader(maxVPPLen, maxLinuxLen)
+
 	for _, m := range mappings {
 		speedStr := speedToString(m.Speed)
-		numaStr := ""
-		if m.NUMA > 0 {
-			numaStr = fmt.Sprintf(" NUMA%d", m.NUMA)
-		}
-		fmt.Printf("  %-*s  ->  %-*s  (%s%s)\n", maxVPPLen, m.VPPName, maxLinuxLen, m.LinuxName, speedStr, numaStr)
+		numaStr := fmt.Sprintf("%d", m.NUMA)
+		fmt.Printf("  %-*s   %-*s   %-5s   %-4s   %s\n",
+			maxVPPLen, m.VPPName,
+			maxLinuxLen, m.LinuxName,
+			speedStr, numaStr, m.PCI)
 	}
 	fmt.Println()
 
