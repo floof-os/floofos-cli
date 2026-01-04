@@ -119,7 +119,14 @@ func getOperationalModeCompletions(line string, c *FloofCompleter) []string {
 	words := strings.Fields(line)
 
 	if len(words) == 0 || (len(words) == 1 && !strings.HasSuffix(line, " ")) {
-		return []string{"show", "configure", "help", "status", "exit"}
+		return []string{"show", "configure", "start", "help", "status"}
+	}
+
+	if words[0] == "start" {
+		if len(words) == 1 || (len(words) == 2 && !strings.HasSuffix(line, " ")) {
+			return filterCompletions([]string{"shell"}, getLastWord(line))
+		}
+		return []string{}
 	}
 
 	if words[0] == "show" {
@@ -127,7 +134,7 @@ func getOperationalModeCompletions(line string, c *FloofCompleter) []string {
 		birdComps, _ := c.birdClient.GetCompletions(line)
 
 		allComps := append(vppComps, birdComps...)
-		allComps = append(allComps, "configuration", "bgp")
+		allComps = append(allComps, "configuration", "bgp", "service", "system")
 		return uniqueStrings(allComps)
 	}
 
@@ -137,6 +144,14 @@ func getOperationalModeCompletions(line string, c *FloofCompleter) []string {
 	}
 
 	return []string{}
+}
+
+func getLastWord(line string) string {
+	words := strings.Fields(line)
+	if len(words) > 0 && !strings.HasSuffix(line, " ") {
+		return words[len(words)-1]
+	}
+	return ""
 }
 
 func getConfigurationModeCompletions(line string, c *FloofCompleter) []string {
@@ -186,7 +201,7 @@ func getFloofOSCompletions(line string) []string {
 	}
 
 	if len(words) == 0 {
-		cmds := []string{"commit", "backup", "rollback"}
+		cmds := []string{"commit", "backup", "rollback", "set", "show", "delete"}
 		return filterCompletions(cmds, prefix)
 	}
 
@@ -195,11 +210,28 @@ func getFloofOSCompletions(line string) []string {
 	switch firstWord {
 	case "show":
 		if len(words) == 1 {
-			return filterCompletions([]string{"configuration", "bgp"}, prefix)
+			return filterCompletions([]string{"configuration", "bgp", "service", "system"}, prefix)
+		}
+		if len(words) == 2 && words[1] == "service" {
+			return filterCompletions([]string{"ssh", "snmp"}, prefix)
 		}
 	case "set":
 		if len(words) == 1 {
-			return filterCompletions([]string{"bgp", "hostname"}, prefix)
+			return filterCompletions([]string{"bgp", "hostname", "service", "security"}, prefix)
+		}
+		if len(words) == 2 && words[1] == "service" {
+			return filterCompletions([]string{"ssh", "snmp"}, prefix)
+		}
+		if len(words) == 3 && words[1] == "service" && words[2] == "ssh" {
+			return filterCompletions([]string{"port", "root-login", "password-auth", "listen-address"}, prefix)
+		}
+		if len(words) == 3 && words[1] == "service" && words[2] == "snmp" {
+			return filterCompletions([]string{"enable", "disable", "community", "location", "contact"}, prefix)
+		}
+		if len(words) == 4 && words[1] == "service" && words[2] == "ssh" {
+			if words[3] == "root-login" || words[3] == "password-auth" {
+				return filterCompletions([]string{"enable", "disable"}, prefix)
+			}
 		}
 	case "commit":
 		if len(words) == 1 {
@@ -208,6 +240,19 @@ func getFloofOSCompletions(line string) []string {
 	case "backup":
 		if len(words) == 1 {
 			return filterCompletions([]string{"create", "list", "restore", "delete"}, prefix)
+		}
+	case "delete":
+		if len(words) == 1 {
+			return filterCompletions([]string{"service"}, prefix)
+		}
+		if len(words) == 2 && words[1] == "service" {
+			return filterCompletions([]string{"ssh", "snmp"}, prefix)
+		}
+		if len(words) == 3 && words[1] == "service" && words[2] == "ssh" {
+			return filterCompletions([]string{"port", "root-login", "password-auth", "listen-address"}, prefix)
+		}
+		if len(words) == 3 && words[1] == "service" && words[2] == "snmp" {
+			return filterCompletions([]string{"community", "location", "contact"}, prefix)
 		}
 	}
 

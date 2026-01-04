@@ -197,6 +197,16 @@ func showCurrentConfig(isInteractive bool) error {
 		config.Sections = append(config.Sections, section)
 	}
 
+	if serviceConfig, err := ReadServiceConfig(); err == nil {
+		section := ConfigSection{
+			Name:        "Service Configuration",
+			Description: "SSH and SNMP service settings",
+			Type:        "service",
+			Content:     serviceConfig,
+		}
+		config.Sections = append(config.Sections, section)
+	}
+
 	return displayConfig(config, isInteractive)
 }
 
@@ -568,6 +578,79 @@ func readFloofOSConfig() (map[string]interface{}, error) {
 			return nil, err
 		}
 	}
+
+	return config, nil
+}
+
+func ReadServiceConfig() (map[string]interface{}, error) {
+	config := make(map[string]interface{})
+
+	sshConfig := make(map[string]interface{})
+	sshdConfigFile := "/etc/ssh/sshd_config"
+	if data, err := os.ReadFile(sshdConfigFile); err == nil {
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "#") || trimmed == "" {
+				continue
+			}
+			parts := strings.Fields(trimmed)
+			if len(parts) >= 2 {
+				key := parts[0]
+				value := strings.Join(parts[1:], " ")
+				switch key {
+				case "Port":
+					sshConfig["port"] = value
+				case "PermitRootLogin":
+					sshConfig["root-login"] = value
+				case "PasswordAuthentication":
+					sshConfig["password-auth"] = value
+				case "ListenAddress":
+					if existing, ok := sshConfig["listen-address"].([]string); ok {
+						sshConfig["listen-address"] = append(existing, value)
+					} else {
+						sshConfig["listen-address"] = []string{value}
+					}
+				}
+			}
+		}
+	}
+	config["ssh"] = sshConfig
+
+	snmpConfig := make(map[string]interface{})
+	snmpdConfigFile := "/etc/snmp/snmpd-dataplane.conf"
+	if data, err := os.ReadFile(snmpdConfigFile); err == nil {
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "#") || trimmed == "" {
+				continue
+			}
+			if strings.HasPrefix(trimmed, "rocommunity ") {
+				parts := strings.Fields(trimmed)
+				if len(parts) >= 2 {
+					snmpConfig["community"] = parts[1]
+				}
+			}
+			if strings.HasPrefix(trimmed, "syslocation ") {
+				snmpConfig["location"] = strings.TrimPrefix(trimmed, "syslocation ")
+			}
+			if strings.HasPrefix(trimmed, "syscontact ") {
+				snmpConfig["contact"] = strings.TrimPrefix(trimmed, "syscontact ")
+			}
+		}
+	}
+
+	snmpCmd := exec.Command("systemctl", "is-active", "snmpd-dataplane.service")
+	if output, err := snmpCmd.CombinedOutput(); err == nil {
+		status := strings.TrimSpace(string(output))
+		if status == "active" {
+			snmpConfig["enabled"] = true
+		} else {
+			snmpConfig["enabled"] = false
+		}
+	}
+	config["snmp"] = snmpConfig
 
 	return config, nil
 }

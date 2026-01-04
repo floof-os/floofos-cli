@@ -454,7 +454,6 @@ var completionTree = map[string][]string{
 		"firewall",
 		"fail2ban",
 		"ssh-key",
-		"ssh-password-auth",
 		"rate-limit",
 	},
 	"set security firewall": {
@@ -471,10 +470,6 @@ var completionTree = map[string][]string{
 		"maxretry",
 		"bantime",
 		"jail",
-	},
-	"set security ssh-password-auth": {
-		"enable",
-		"disable",
 	},
 	"set snmp": {
 		"enable",
@@ -1258,8 +1253,6 @@ func showHelp(line string) {
 			fmt.Println("                Intrusion prevention system")
 			fmt.Println("  ssh-key <username> key <public-key>")
 			fmt.Println("                SSH public key authentication")
-			fmt.Println("  ssh-password-auth [ enable | disable ]")
-			fmt.Println("                Password authentication control")
 			fmt.Println("  rate-limit ssh <connections-per-minute>")
 			fmt.Println("                SSH connection rate limiting")
 			return
@@ -1346,13 +1339,6 @@ func showHelp(line string) {
 			return
 		}
 
-		if len(args) == 3 && args[0] == "set" && args[1] == "security" && args[2] == "ssh-password-auth" {
-			fmt.Println("Possible completions:")
-			fmt.Println("  enable        Enable SSH password authentication")
-			fmt.Println("  disable       Disable SSH password authentication")
-			return
-		}
-
 		if len(args) == 4 && args[0] == "set" && args[1] == "security" && args[2] == "firewall" && args[3] == "rule" {
 			fmt.Println("Possible completions:")
 			fmt.Println("  <name>        Unique rule name")
@@ -1374,13 +1360,6 @@ func showHelp(line string) {
 		if len(args) == 3 && args[0] == "set" && args[1] == "security" && args[2] == "ssh-key" {
 			fmt.Println("Possible completions:")
 			fmt.Println("  <username>    Username to add SSH key for")
-			return
-		}
-
-		if len(args) == 3 && args[0] == "set" && args[1] == "security" && args[2] == "ssh-password-auth" {
-			fmt.Println("Possible completions:")
-			fmt.Println("  enable        Enable SSH password authentication")
-			fmt.Println("  disable       Disable SSH password authentication")
 			return
 		}
 
@@ -3391,27 +3370,47 @@ func showConfiguration() {
 		securityLines = append(securityLines, "set security fail2ban disable")
 	}
 
+	if len(securityLines) > 0 {
+		for _, l := range securityLines {
+			output.WriteString(l + "\n")
+		}
+		output.WriteString("!\n")
+	}
+
+	sshLines := []string{}
 	sshdConfig, err := os.ReadFile("/etc/ssh/sshd_config")
 	if err == nil {
 		lines := strings.Split(string(sshdConfig), "\n")
 		for _, line := range lines {
 			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "PasswordAuthentication") {
-				parts := strings.Fields(trimmed)
-				if len(parts) >= 2 {
+			if strings.HasPrefix(trimmed, "#") || trimmed == "" {
+				continue
+			}
+			parts := strings.Fields(trimmed)
+			if len(parts) >= 2 {
+				switch parts[0] {
+				case "Port":
+					if parts[1] != "22" {
+						sshLines = append(sshLines, fmt.Sprintf("set service ssh port %s", parts[1]))
+					}
+				case "ListenAddress":
+					if parts[1] != "0.0.0.0" && parts[1] != "::" {
+						sshLines = append(sshLines, fmt.Sprintf("set service ssh listen-address %s", parts[1]))
+					}
+				case "PermitRootLogin":
 					if strings.ToLower(parts[1]) == "yes" {
-						securityLines = append(securityLines, "set security ssh-password-auth enable")
-					} else {
-						securityLines = append(securityLines, "set security ssh-password-auth disable")
+						sshLines = append(sshLines, "set service ssh root-login enable")
+					}
+				case "PasswordAuthentication":
+					if strings.ToLower(parts[1]) == "no" {
+						sshLines = append(sshLines, "set service ssh password-auth disable")
 					}
 				}
-				break
 			}
 		}
 	}
-
-	if len(securityLines) > 0 {
-		for _, l := range securityLines {
+	if len(sshLines) > 0 {
+		for _, l := range sshLines {
 			output.WriteString(l + "\n")
 		}
 		output.WriteString("!\n")
@@ -3424,7 +3423,7 @@ func showConfiguration() {
 	}
 
 	if snmpdActive {
-		snmpLines := []string{"set snmp enable"}
+		snmpLines := []string{"set service snmp enable"}
 		if snmpData, err := os.ReadFile("/etc/snmp/snmpd-dataplane.conf"); err == nil {
 			lines := strings.Split(string(snmpData), "\n")
 			for _, line := range lines {
@@ -3434,17 +3433,21 @@ func showConfiguration() {
 				}
 				if strings.HasPrefix(trimmed, "rocommunity ") {
 					parts := strings.Fields(trimmed)
-					if len(parts) >= 2 {
-						snmpLines = append(snmpLines, fmt.Sprintf("set snmp community %s", parts[1]))
+					if len(parts) >= 2 && parts[1] != "public" {
+						snmpLines = append(snmpLines, fmt.Sprintf("set service snmp community %s", parts[1]))
 					}
 				}
 				if strings.HasPrefix(trimmed, "syslocation ") {
 					loc := strings.TrimPrefix(trimmed, "syslocation ")
-					snmpLines = append(snmpLines, fmt.Sprintf("set snmp location %s", loc))
+					if loc != "FloofOS Router" {
+						snmpLines = append(snmpLines, fmt.Sprintf("set service snmp location %s", loc))
+					}
 				}
 				if strings.HasPrefix(trimmed, "syscontact ") {
 					contact := strings.TrimPrefix(trimmed, "syscontact ")
-					snmpLines = append(snmpLines, fmt.Sprintf("set snmp contact %s", contact))
+					if contact != "admin@localhost" {
+						snmpLines = append(snmpLines, fmt.Sprintf("set service snmp contact %s", contact))
+					}
 				}
 			}
 		}
@@ -5365,7 +5368,7 @@ func formatTraffic(bitsPerSec float64) (float64, string) {
 
 func handleSecuritySetCommands(args []string) {
 	if len(args) == 0 {
-		fmt.Println("Usage: set security <firewall|fail2ban|ssh-key|ssh-password-auth>")
+		fmt.Println("Usage: set security <firewall|fail2ban|ssh-key>")
 		return
 	}
 
@@ -5558,37 +5561,8 @@ func handleSecuritySetCommands(args []string) {
 			auditLogInfo(fmt.Sprintf("Added SSH key for user: %s", username))
 		}
 
-	case "ssh-password-auth":
-		if len(args) < 2 {
-			fmt.Println("Usage: set security ssh-password-auth <enable|disable>")
-			return
-		}
-
-		switch args[1] {
-		case "enable":
-			if err := security.EnablePasswordAuth(); err != nil {
-				fmt.Printf("Error: %v\n", err)
-				auditLogError(fmt.Sprintf("Failed to enable password auth: %v", err))
-			} else {
-				fmt.Println("SSH password authentication enabled")
-				auditLogInfo("Enabled SSH password authentication")
-			}
-
-		case "disable":
-			if err := security.DisablePasswordAuth(); err != nil {
-				fmt.Printf("Error: %v\n", err)
-				auditLogError(fmt.Sprintf("Failed to disable password auth: %v", err))
-			} else {
-				fmt.Println("SSH password authentication disabled")
-				auditLogInfo("Disabled SSH password authentication")
-			}
-
-		default:
-			fmt.Println("Usage: set security ssh-password-auth <enable|disable>")
-		}
-
 	default:
-		fmt.Println("Unknown security command. Use: firewall, fail2ban, ssh-key, ssh-password-auth")
+		fmt.Println("Unknown security command. Use: firewall, fail2ban, ssh-key")
 	}
 }
 

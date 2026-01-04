@@ -112,8 +112,13 @@ func isFloofOSCommand(words []string, fullCommand string) bool {
 			"show configuration",
 			"show running-config",
 			"show bgp",
+			"show service",
+			"show system",
 			"set bgp",
 			"set hostname",
+			"set service",
+			"set security",
+			"delete service",
 			"commit bgp",
 		}
 

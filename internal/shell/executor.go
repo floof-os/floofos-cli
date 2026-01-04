@@ -197,12 +197,25 @@ func executeFloofOSCommand(command string, isInteractive bool) error {
 
 	case args[0] == "config":
 		return floofos.ExecuteConfig(args[1:], isInteractive)
-	case args[0] == "service":
-		return floofos.ExecuteService(args[1:], isInteractive)
 	case args[0] == "system":
 		return floofos.ExecuteSystem(args[1:], isInteractive)
 	case args[0] == "network":
 		return floofos.ExecuteNetwork(args[1:], isInteractive)
+
+	case strings.HasPrefix(commandStr, "set service"):
+		return floofos.ExecuteServiceCommand(args[2:], isInteractive)
+	case strings.HasPrefix(commandStr, "show service"):
+		if len(args) >= 3 {
+			switch args[2] {
+			case "ssh":
+				return floofos.ShowServiceSSH()
+			case "snmp":
+				return floofos.ShowServiceSNMP()
+			}
+		}
+		return floofos.ExecuteServiceCommand(args[2:], isInteractive)
+	case strings.HasPrefix(commandStr, "delete service"):
+		return floofos.DeleteServiceCommand(args[2:])
 
 	default:
 		return fmt.Errorf("unknown FloofOS command: %s", args[0])

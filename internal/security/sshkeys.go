@@ -221,7 +221,7 @@ func GetSSHConfig() (string, error) {
 	settings := map[string]string{
 		"PasswordAuthentication": "yes",
 		"PubkeyAuthentication":   "yes",
-		"PermitRootLogin":        "prohibit-password",
+		"PermitRootLogin":        "no",
 		"Port":                   "22",
 	}
 
@@ -241,15 +241,289 @@ func GetSSHConfig() (string, error) {
 		}
 	}
 
-	output.WriteString(fmt.Sprintf("password-authentication: %s\n", settings["PasswordAuthentication"]))
-	output.WriteString(fmt.Sprintf("pubkey-authentication: %s\n", settings["PubkeyAuthentication"]))
-	output.WriteString(fmt.Sprintf("permit-root-login: %s\n", settings["PermitRootLogin"]))
-	output.WriteString(fmt.Sprintf("port: %s\n", settings["Port"]))
+	listenAddr, _ := GetListenAddress()
+
+	output.WriteString("SSH Service Configuration:\n")
+	output.WriteString(fmt.Sprintf("  Port:              %s\n", settings["Port"]))
+	output.WriteString(fmt.Sprintf("  Listen Address:    %s\n", listenAddr))
+	output.WriteString(fmt.Sprintf("  Root Login:        %s\n", formatEnabled(settings["PermitRootLogin"])))
+	output.WriteString(fmt.Sprintf("  Password Auth:     %s\n", formatEnabled(settings["PasswordAuthentication"])))
+	output.WriteString(fmt.Sprintf("  Pubkey Auth:       %s\n", formatEnabled(settings["PubkeyAuthentication"])))
 
 	cmd := exec.Command("systemctl", "is-active", "ssh-dataplane.service")
 	statusOutput, _ := cmd.CombinedOutput()
 	status := strings.TrimSpace(string(statusOutput))
-	output.WriteString(fmt.Sprintf("service: %s\n", status))
+	output.WriteString(fmt.Sprintf("  Service:           %s\n", status))
 
 	return output.String(), nil
+}
+
+func formatEnabled(value string) string {
+	switch value {
+	case "yes":
+		return "enabled"
+	case "no":
+		return "disabled"
+	default:
+		return value
+	}
+}
+
+func SetSSHPort(port int) error {
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("port must be between 1 and 65535")
+	}
+
+	if _, err := os.Stat(sshdConfigBackup); os.IsNotExist(err) {
+		cmd := exec.Command("cp", sshdConfigFile, sshdConfigBackup)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to backup sshd_config: %w\nOutput: %s", err, output)
+		}
+	}
+
+	data, err := os.ReadFile(sshdConfigFile)
+	if err != nil {
+		return fmt.Errorf("failed to read sshd_config: %w", err)
+	}
+
+	config := string(data)
+	lines := strings.Split(config, "\n")
+
+	found := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Port ") || strings.HasPrefix(trimmed, "#Port ") {
+			lines[i] = fmt.Sprintf("Port %d", port)
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		for i, line := range lines {
+			if strings.Contains(line, "AddressFamily") {
+				lines = append(lines[:i], append([]string{fmt.Sprintf("Port %d", port)}, lines[i:]...)...)
+				break
+			}
+		}
+	}
+
+	newConfig := strings.Join(lines, "\n")
+	if err := os.WriteFile(sshdConfigFile, []byte(newConfig), 0644); err != nil {
+		return fmt.Errorf("failed to write sshd_config: %w", err)
+	}
+
+	if err := updateFail2banSSHPort(port); err != nil {
+		fmt.Printf("Warning: failed to update fail2ban SSH port: %v\n", err)
+	}
+
+	cmd := exec.Command("systemctl", "restart", "ssh-dataplane.service")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to restart SSH: %w\nOutput: %s", err, output)
+	}
+
+	return nil
+}
+
+func SetRootLogin(enable bool) error {
+	if _, err := os.Stat(sshdConfigBackup); os.IsNotExist(err) {
+		cmd := exec.Command("cp", sshdConfigFile, sshdConfigBackup)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to backup sshd_config: %w\nOutput: %s", err, output)
+		}
+	}
+
+	data, err := os.ReadFile(sshdConfigFile)
+	if err != nil {
+		return fmt.Errorf("failed to read sshd_config: %w", err)
+	}
+
+	config := string(data)
+	lines := strings.Split(config, "\n")
+
+	value := "no"
+	if enable {
+		value = "yes"
+	}
+
+	found := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "PermitRootLogin") || strings.HasPrefix(trimmed, "#PermitRootLogin") {
+			lines[i] = fmt.Sprintf("PermitRootLogin %s", value)
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		lines = append(lines, fmt.Sprintf("PermitRootLogin %s", value))
+	}
+
+	newConfig := strings.Join(lines, "\n")
+	if err := os.WriteFile(sshdConfigFile, []byte(newConfig), 0644); err != nil {
+		return fmt.Errorf("failed to write sshd_config: %w", err)
+	}
+
+	cmd := exec.Command("systemctl", "restart", "ssh-dataplane.service")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to restart SSH: %w\nOutput: %s", err, output)
+	}
+
+	return nil
+}
+
+func GetSSHPort() (int, error) {
+	data, err := os.ReadFile(sshdConfigFile)
+	if err != nil {
+		return 22, fmt.Errorf("failed to read sshd_config: %w", err)
+	}
+
+	config := string(data)
+	lines := strings.Split(config, "\n")
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Port ") {
+			var port int
+			fmt.Sscanf(trimmed, "Port %d", &port)
+			if port > 0 {
+				return port, nil
+			}
+		}
+	}
+
+	return 22, nil
+}
+
+func updateFail2banSSHPort(port int) error {
+	fail2banConfig := "/etc/fail2ban/jail.d/floofos.local"
+
+	data, err := os.ReadFile(fail2banConfig)
+	if err != nil {
+		return nil
+	}
+
+	config := string(data)
+	lines := strings.Split(config, "\n")
+
+	found := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "port") {
+			lines[i] = fmt.Sprintf("port = %d", port)
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		for i, line := range lines {
+			if strings.Contains(line, "[sshd]") {
+				lines = append(lines[:i+1], append([]string{fmt.Sprintf("port = %d", port)}, lines[i+1:]...)...)
+				break
+			}
+		}
+	}
+
+	newConfig := strings.Join(lines, "\n")
+	if err := os.WriteFile(fail2banConfig, []byte(newConfig), 0644); err != nil {
+		return fmt.Errorf("failed to write fail2ban config: %w", err)
+	}
+
+	exec.Command("fail2ban-client", "reload").Run()
+
+	return nil
+}
+
+func SetListenAddress(address string) error {
+	if address == "" {
+		return fmt.Errorf("address cannot be empty")
+	}
+
+	if _, err := os.Stat(sshdConfigBackup); os.IsNotExist(err) {
+		cmd := exec.Command("cp", sshdConfigFile, sshdConfigBackup)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to backup sshd_config: %w\nOutput: %s", err, output)
+		}
+	}
+
+	data, err := os.ReadFile(sshdConfigFile)
+	if err != nil {
+		return fmt.Errorf("failed to read sshd_config: %w", err)
+	}
+
+	config := string(data)
+	lines := strings.Split(config, "\n")
+
+	var newLines []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "ListenAddress") || strings.HasPrefix(trimmed, "#ListenAddress") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "AddressFamily") || strings.HasPrefix(trimmed, "#AddressFamily") {
+			continue
+		}
+		newLines = append(newLines, line)
+	}
+
+	var insertLines []string
+	if strings.Contains(address, ":") {
+		insertLines = []string{
+			"AddressFamily inet6",
+			fmt.Sprintf("ListenAddress %s", address),
+		}
+	} else {
+		insertLines = []string{
+			"AddressFamily inet",
+			fmt.Sprintf("ListenAddress %s", address),
+		}
+	}
+
+	for i, line := range newLines {
+		if strings.HasPrefix(line, "Port ") {
+			newLines = append(newLines[:i+1], append(insertLines, newLines[i+1:]...)...)
+			break
+		}
+	}
+
+	newConfig := strings.Join(newLines, "\n")
+	if err := os.WriteFile(sshdConfigFile, []byte(newConfig), 0644); err != nil {
+		return fmt.Errorf("failed to write sshd_config: %w", err)
+	}
+
+	cmd := exec.Command("systemctl", "restart", "ssh-dataplane.service")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to restart SSH: %w\nOutput: %s", err, output)
+	}
+
+	return nil
+}
+
+func GetListenAddress() (string, error) {
+	data, err := os.ReadFile(sshdConfigFile)
+	if err != nil {
+		return "0.0.0.0", fmt.Errorf("failed to read sshd_config: %w", err)
+	}
+
+	config := string(data)
+	lines := strings.Split(config, "\n")
+
+	var addresses []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "ListenAddress ") {
+			parts := strings.Fields(trimmed)
+			if len(parts) >= 2 {
+				addresses = append(addresses, parts[1])
+			}
+		}
+	}
+
+	if len(addresses) == 0 {
+		return "0.0.0.0", nil
+	}
+
+	return strings.Join(addresses, ", "), nil
 }

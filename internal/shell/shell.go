@@ -13,11 +13,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"os/user"
 	"strings"
+	"syscall"
 
 	"github.com/chzyer/readline"
 	"github.com/floof-os/floofos-cli/internal/bird"
 	"github.com/floof-os/floofos-cli/internal/vpp"
+	"golang.org/x/term"
 )
 
 func StartInteractiveShell() error {
@@ -118,19 +122,26 @@ func showInlineHelp(line string) {
 			fmt.Println("\nOperational Mode - Available commands:")
 			fmt.Println("  show          Display information (VPP + BIRD)")
 			fmt.Println("  configure     Enter configuration mode")
+			fmt.Println("  start shell   Access system shell (requires root password)")
 			fmt.Println("  help          Show this help")
-			fmt.Println("  exit          Exit FloofCTL")
 			fmt.Println()
 			fmt.Println("Use 'show ?' to see all VPP and BIRD show commands")
 			return
 		} else {
 			fmt.Println("\nConfiguration Mode:")
-			fmt.Println("  FloofCTL commands: commit, backup, rollback, set hostname")
+			fmt.Println("  set           Configure settings")
+			fmt.Println("  show          Display information")
+			fmt.Println("  delete        Remove configuration")
+			fmt.Println("  commit        Apply changes")
+			fmt.Println("  backup        Backup management")
 			fmt.Println("  exit/end      Return to operational mode")
 			fmt.Println()
-			fmt.Println("All VPP and BIRD commands available - use '<command> ?' for help")
 			return
 		}
+	}
+
+	if showFloofOSInlineHelp(baseCmd) {
+		return
 	}
 
 	vppClient := vpp.NewClient()
@@ -155,8 +166,175 @@ func showInlineHelp(line string) {
 
 	if (vppErr != nil || vppOutput == "") && (birdErr != nil || birdOutput == "") {
 		fmt.Printf("No help available for: %s\n", baseCmd)
-		fmt.Println("Try checking 'vppctl' and 'birdc' documentation")
 	}
+}
+
+func showFloofOSInlineHelp(cmd string) bool {
+	words := strings.Fields(strings.ToLower(cmd))
+	if len(words) == 0 {
+		return false
+	}
+
+	switch words[0] {
+	case "set":
+		return showSetInlineHelp(words[1:])
+	case "show":
+		return showShowInlineHelp(words[1:])
+	case "delete":
+		return showDeleteInlineHelp(words[1:])
+	case "start":
+		if len(words) == 1 {
+			fmt.Println("  shell         Access system shell")
+			return true
+		}
+		if len(words) == 2 && words[1] == "shell" {
+			fmt.Println("  <cr>")
+			return true
+		}
+	}
+
+	return false
+}
+
+func showSetInlineHelp(words []string) bool {
+	if len(words) == 0 {
+		fmt.Println("  service       Configure services (SSH, SNMP)")
+		fmt.Println("  hostname      Set system hostname")
+		fmt.Println("  bgp           Configure BGP (pathvector)")
+		return true
+	}
+
+	if words[0] == "service" {
+		if len(words) == 1 {
+			fmt.Println("  ssh           SSH service configuration")
+			fmt.Println("  snmp          SNMP service configuration")
+			return true
+		}
+
+		if words[1] == "ssh" {
+			if len(words) == 2 {
+				fmt.Println("  port            SSH port (1-65535)")
+				fmt.Println("  root-login      Root login permission")
+				fmt.Println("  password-auth   Password authentication")
+				fmt.Println("  listen-address  Listen address binding")
+				return true
+			}
+			if len(words) == 3 {
+				switch words[2] {
+				case "port":
+					fmt.Println("  <1-65535>     Port number")
+					return true
+				case "root-login", "password-auth":
+					fmt.Println("  enable        Enable this setting")
+					fmt.Println("  disable       Disable this setting")
+					return true
+				case "listen-address":
+					fmt.Println("  <ip-address>  IP address to bind (e.g., 10.0.0.1, ::)")
+					return true
+				}
+			}
+			if len(words) == 4 {
+				fmt.Println("  <cr>")
+				return true
+			}
+		}
+
+		if words[1] == "snmp" {
+			if len(words) == 2 {
+				fmt.Println("  enable        Enable SNMP service")
+				fmt.Println("  disable       Disable SNMP service")
+				fmt.Println("  community     Set community string")
+				fmt.Println("  location      Set system location")
+				fmt.Println("  contact       Set system contact")
+				return true
+			}
+			if len(words) == 3 {
+				switch words[2] {
+				case "enable", "disable":
+					fmt.Println("  <cr>")
+					return true
+				case "community", "location", "contact":
+					fmt.Println("  <string>      Value to set")
+					return true
+				}
+			}
+			if len(words) >= 4 {
+				fmt.Println("  <cr>")
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func showShowInlineHelp(words []string) bool {
+	if len(words) == 0 {
+		fmt.Println("  service         Show service configuration")
+		fmt.Println("  configuration   Show all configuration")
+		fmt.Println("  system          Show system information")
+		fmt.Println("  bgp             Show BGP status")
+		return true
+	}
+
+	if words[0] == "service" {
+		if len(words) == 1 {
+			fmt.Println("  ssh             Show SSH configuration")
+			fmt.Println("  snmp            Show SNMP configuration")
+			return true
+		}
+		if len(words) == 2 {
+			fmt.Println("  <cr>")
+			return true
+		}
+	}
+
+	return false
+}
+
+func showDeleteInlineHelp(words []string) bool {
+	if len(words) == 0 {
+		fmt.Println("  service       Delete/reset service configuration")
+		return true
+	}
+
+	if words[0] == "service" {
+		if len(words) == 1 {
+			fmt.Println("  ssh           Reset SSH settings to default")
+			fmt.Println("  snmp          Disable and reset SNMP")
+			return true
+		}
+
+		if words[1] == "ssh" {
+			if len(words) == 2 {
+				fmt.Println("  port            Reset to default (22)")
+				fmt.Println("  root-login      Reset to default (disabled)")
+				fmt.Println("  password-auth   Reset to default (enabled)")
+				fmt.Println("  listen-address  Reset to default (0.0.0.0)")
+				return true
+			}
+			if len(words) == 3 {
+				fmt.Println("  <cr>")
+				return true
+			}
+		}
+
+		if words[1] == "snmp" {
+			if len(words) == 2 {
+				fmt.Println("  <cr>            Disable SNMP completely")
+				fmt.Println("  community       Reset to default (public)")
+				fmt.Println("  location        Reset to default")
+				fmt.Println("  contact         Reset to default")
+				return true
+			}
+			if len(words) == 3 {
+				fmt.Println("  <cr>")
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func handleBuiltinCommand(line string) bool {
@@ -165,7 +343,7 @@ func handleBuiltinCommand(line string) bool {
 		return false
 	}
 
-	command := args[0]
+	command := strings.ToLower(args[0])
 
 	switch command {
 	case "configure":
@@ -176,23 +354,21 @@ func handleBuiltinCommand(line string) bool {
 		}
 		return false
 
-	case "exit", "quit":
+	case "start":
+		if len(args) >= 2 && strings.ToLower(args[1]) == "shell" {
+			handleStartShell()
+			return true
+		}
+		return false
+
+	case "exit", "quit", "end":
 		if IsConfigurationMode() {
 			SetMode(OperationalMode)
 			fmt.Println("Exiting configuration mode...")
 			return true
 		}
-		fmt.Println("Goodbye!")
-		os.Exit(0)
+		fmt.Println("Use 'start shell' to access system shell (requires root password)")
 		return true
-
-	case "end":
-		if IsConfigurationMode() {
-			SetMode(OperationalMode)
-			fmt.Println("Returning to operational mode...")
-			return true
-		}
-		return false
 
 	case "help":
 		showHelp()
@@ -219,6 +395,70 @@ func handleBuiltinCommand(line string) bool {
 	}
 }
 
+func handleStartShell() {
+	currentUser, err := user.Current()
+	if err != nil {
+		fmt.Println("Error: Failed to get current user")
+		return
+	}
+
+	if currentUser.Uid == "0" {
+		fmt.Println("Starting system shell...")
+		startSystemShell()
+		return
+	}
+
+	fmt.Println("Authorization required for system shell access.")
+	fmt.Print("Password: ")
+
+	password, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Println()
+
+	if err != nil {
+		fmt.Println("Error reading password")
+		return
+	}
+
+	if authenticateRoot(string(password)) {
+		fmt.Println("Starting system shell...")
+		startSystemShellAsRoot(string(password))
+	} else {
+		fmt.Println("Authentication failed. Access denied.")
+	}
+}
+
+func authenticateRoot(password string) bool {
+	cmd := exec.Command("su", "-c", "true", "root")
+	cmd.Stdin = strings.NewReader(password + "\n")
+	err := cmd.Run()
+	return err == nil
+}
+
+func startSystemShell() {
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/bash"
+	}
+
+	cmd := exec.Command(shell)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Run()
+}
+
+func startSystemShellAsRoot(password string) {
+	cmd := exec.Command("su", "-", "root")
+	cmd.Stdin = strings.NewReader(password + "\n")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Run()
+	if err != nil {
+		fmt.Printf("Shell exited: %v\n", err)
+	}
+}
+
 func showHelp() {
 	fmt.Println("FloofCTL Help")
 	fmt.Println("=============")
@@ -229,8 +469,8 @@ func showHelp() {
 
 	fmt.Println("Mode Commands:")
 	fmt.Println("  configure             - Enter configuration mode (full access)")
-	fmt.Println("  exit                  - Exit current mode or FloofCTL")
-	fmt.Println("  end                   - Return to operational mode")
+	fmt.Println("  start shell           - Access system shell (requires root password)")
+	fmt.Println("  exit/end              - Return to operational mode (config mode only)")
 	fmt.Println()
 
 	fmt.Println("Built-in Commands:")
@@ -284,7 +524,8 @@ func showHelp() {
 	fmt.Println("  - Operational mode: show commands only")
 	fmt.Println("  - Configuration mode: full VPP + BIRD access")
 	fmt.Println("  - Type 'configure' to enter config mode")
-	fmt.Println("  - Type 'exit' or 'end' to return to operational mode")
+	fmt.Println("  - Type 'exit' or 'end' to return to operational mode (config mode)")
+	fmt.Println("  - Type 'start shell' for system shell access")
 	fmt.Println()
 }
 
