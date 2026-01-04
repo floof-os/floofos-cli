@@ -527,3 +527,54 @@ func GetListenAddress() (string, error) {
 
 	return strings.Join(addresses, ", "), nil
 }
+
+func ResetSSHListenAddress() error {
+	if _, err := os.Stat(sshdConfigBackup); os.IsNotExist(err) {
+		cmd := exec.Command("cp", sshdConfigFile, sshdConfigBackup)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to backup sshd_config: %w\nOutput: %s", err, output)
+		}
+	}
+
+	data, err := os.ReadFile(sshdConfigFile)
+	if err != nil {
+		return fmt.Errorf("failed to read sshd_config: %w", err)
+	}
+
+	config := string(data)
+	lines := strings.Split(config, "\n")
+
+	// Remove all ListenAddress lines
+	var newLines []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "ListenAddress ") {
+			newLines = append(newLines, line)
+		}
+	}
+
+	// Add default ListenAddress entries after Port line
+	insertLines := []string{
+		"ListenAddress 0.0.0.0",
+		"ListenAddress ::",
+	}
+
+	for i, line := range newLines {
+		if strings.HasPrefix(line, "Port ") {
+			newLines = append(newLines[:i+1], append(insertLines, newLines[i+1:]...)...)
+			break
+		}
+	}
+
+	newConfig := strings.Join(newLines, "\n")
+	if err := os.WriteFile(sshdConfigFile, []byte(newConfig), 0644); err != nil {
+		return fmt.Errorf("failed to write sshd_config: %w", err)
+	}
+
+	cmd := exec.Command("systemctl", "restart", "ssh-dataplane.service")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to restart SSH: %w\nOutput: %s", err, output)
+	}
+
+	return nil
+}

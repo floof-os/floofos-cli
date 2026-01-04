@@ -98,7 +98,10 @@ var completionTree = map[string][]string{
 		"ping",
 		"traceroute",
 		"system",
-		"exit", "end", "quit",
+		"start",
+	},
+	"start": {
+		"shell",
 	},
 	"_root_config": {
 		"backup",
@@ -353,11 +356,52 @@ var completionTree = map[string][]string{
 		"protocol",
 		"system",
 		"security",
+		"service",
 		"snmp",
 		"interface",
 		"ip",
 		"ip6",
 		"logging",
+	},
+	"set service": {
+		"ssh",
+		"snmp",
+	},
+	"set service ssh": {
+		"port",
+		"root-login",
+		"password-auth",
+		"listen-address",
+	},
+	"set service ssh port": {
+		"<1-65535>",
+	},
+	"set service ssh root-login": {
+		"enable",
+		"disable",
+	},
+	"set service ssh password-auth": {
+		"enable",
+		"disable",
+	},
+	"set service ssh listen-address": {
+		"<ip-address>",
+	},
+	"set service snmp": {
+		"enable",
+		"disable",
+		"community",
+		"location",
+		"contact",
+	},
+	"set service snmp community": {
+		"<string>",
+	},
+	"set service snmp location": {
+		"<string>",
+	},
+	"set service snmp contact": {
+		"<string>",
 	},
 	"set protocol": {
 		"bgp",
@@ -506,6 +550,7 @@ var completionTree = map[string][]string{
 	"delete": {
 		"user",
 		"security",
+		"service",
 		"loopback",
 		"bridge-domain",
 		"bond",
@@ -530,6 +575,21 @@ var completionTree = map[string][]string{
 	},
 	"delete security firewall": {
 		"rule",
+	},
+	"delete service": {
+		"ssh",
+		"snmp",
+	},
+	"delete service ssh": {
+		"port",
+		"root-login",
+		"password-auth",
+		"listen-address",
+	},
+	"delete service snmp": {
+		"community",
+		"location",
+		"contact",
 	},
 	"clear": {
 		"counters",
@@ -856,19 +916,7 @@ func processCommandInstantHelp(input string) bool {
 			fmt.Println("Exiting configuration mode")
 			return false
 		}
-		if currentUser != nil && currentUser.Username == "root" {
-			fmt.Print("Exit to shell? (Y/N): ")
-			reader := bufio.NewReader(os.Stdin)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToUpper(response))
-			if response == "Y" || response == "YES" {
-				fmt.Println("Exiting FloofCTL CLI")
-				auditLogInfo("Logged out")
-				os.Exit(0)
-			}
-			return false
-		}
-		fmt.Println("Non-root users cannot exit to shell")
+		fmt.Println("Use 'start shell' to access Linux shell")
 		return false
 	}
 
@@ -908,8 +956,13 @@ func processCommandInstantHelp(input string) bool {
 		return false
 	}
 
-	if currentMode == OperationalMode && cmd != "show" && cmd != "configure" && cmd != "help" && cmd != "ping" && cmd != "traceroute" && cmd != "system" {
+	if currentMode == OperationalMode && cmd != "show" && cmd != "configure" && cmd != "help" && cmd != "ping" && cmd != "traceroute" && cmd != "system" && cmd != "start" {
 		fmt.Println("Error: Only 'show' commands allowed in operational mode")
+		return false
+	}
+
+	if cmd == "start" && len(args) >= 2 && args[1] == "shell" {
+		executeStartShell()
 		return false
 	}
 
@@ -1158,9 +1211,14 @@ func processCommand(line string, liner *liner.State) bool {
 		return true
 	}
 
-	if currentMode == OperationalMode && cmd != "show" && cmd != "configure" && cmd != "help" && cmd != "ping" && cmd != "traceroute" && cmd != "system" {
+	if currentMode == OperationalMode && cmd != "show" && cmd != "configure" && cmd != "help" && cmd != "ping" && cmd != "traceroute" && cmd != "system" && cmd != "start" {
 		fmt.Println("Error: Only 'show' commands allowed in operational mode")
 		fmt.Println("Use 'configure' to enter configuration mode")
+		return false
+	}
+
+	if cmd == "start" && len(args) >= 2 && args[1] == "shell" {
+		executeStartShell()
 		return false
 	}
 
@@ -1218,8 +1276,10 @@ func showHelp(line string) {
 			output.WriteString("  protocol      Routing protocol configuration\n")
 			output.WriteString("  security [ firewall | fail2ban | ssh-key ]\n")
 			output.WriteString("                Security and access control\n")
+			output.WriteString("  service [ ssh | snmp ]\n")
+			output.WriteString("                Service configuration\n")
 			output.WriteString("  snmp [ enable | community | location ]\n")
-			output.WriteString("                SNMP monitoring agent\n")
+			output.WriteString("                SNMP monitoring agent (deprecated: use set service snmp)\n")
 			output.WriteString("  system        System configuration\n")
 			vppCmd := exec.Command("vppctl", "set", "?")
 			if vppOutput, err := vppCmd.CombinedOutput(); err == nil && len(vppOutput) > 0 {
@@ -1230,6 +1290,119 @@ func showHelp(line string) {
 				}
 			}
 			printWithPager(output.String())
+			return
+		}
+
+		if len(args) == 2 && args[0] == "set" && args[1] == "service" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  ssh           SSH server configuration")
+			fmt.Println("  snmp          SNMP agent configuration")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "set" && args[1] == "service" && args[2] == "ssh" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  port <1-65535>")
+			fmt.Println("                SSH port (default: 22)")
+			fmt.Println("  root-login [ enable | disable ]")
+			fmt.Println("                Root login permission (default: disable)")
+			fmt.Println("  password-auth [ enable | disable ]")
+			fmt.Println("                Password authentication (default: enable)")
+			fmt.Println("  listen-address <ip>")
+			fmt.Println("                Listen address (default: 0.0.0.0, ::)")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "set" && args[1] == "service" && args[2] == "ssh" && args[3] == "port" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <1-65535>     SSH port number")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "set" && args[1] == "service" && args[2] == "ssh" && args[3] == "root-login" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  enable        Allow root login")
+			fmt.Println("  disable       Deny root login")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "set" && args[1] == "service" && args[2] == "ssh" && args[3] == "password-auth" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  enable        Enable password authentication")
+			fmt.Println("  disable       Disable password authentication (key-only)")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "set" && args[1] == "service" && args[2] == "ssh" && args[3] == "listen-address" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <ip-address>  IP address to listen on")
+			return
+		}
+
+		if len(args) == 5 && args[0] == "set" && args[1] == "service" && args[2] == "ssh" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Apply configuration")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "set" && args[1] == "service" && args[2] == "snmp" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  enable        Enable SNMP agent")
+			fmt.Println("  disable       Disable SNMP agent")
+			fmt.Println("  community <string>")
+			fmt.Println("                SNMP community string (default: public)")
+			fmt.Println("  location <string>")
+			fmt.Println("                System location")
+			fmt.Println("  contact <string>")
+			fmt.Println("                System contact")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "set" && args[1] == "service" && args[2] == "snmp" && args[3] == "enable" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Enable SNMP agent")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "set" && args[1] == "service" && args[2] == "snmp" && args[3] == "disable" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Disable SNMP agent")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "set" && args[1] == "service" && args[2] == "snmp" && args[3] == "community" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <string>      SNMP community string")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "set" && args[1] == "service" && args[2] == "snmp" && args[3] == "location" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <string>      System location description")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "set" && args[1] == "service" && args[2] == "snmp" && args[3] == "contact" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <string>      System contact email/name")
+			return
+		}
+
+		if len(args) == 5 && args[0] == "set" && args[1] == "service" && args[2] == "snmp" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Apply configuration")
+			return
+		}
+
+		if len(args) == 1 && args[0] == "start" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  shell         Start a Linux shell session")
+			return
+		}
+
+		if len(args) == 2 && args[0] == "start" && args[1] == "shell" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Start Linux shell")
 			return
 		}
 
@@ -1706,6 +1879,8 @@ func showHelp(line string) {
 			output.WriteString("                Delete CLI user\n")
 			output.WriteString("  security [ firewall | ssh-key ]\n")
 			output.WriteString("                Delete security configurations\n")
+			output.WriteString("  service [ ssh | snmp ]\n")
+			output.WriteString("                Reset service configurations to default\n")
 			vppCmd := exec.Command("vppctl", "delete", "?")
 			if vppOutput, err := vppCmd.CombinedOutput(); err == nil && len(vppOutput) > 0 {
 				vppStr := strings.TrimSpace(string(vppOutput))
@@ -1727,6 +1902,44 @@ func showHelp(line string) {
 		if len(args) == 2 && args[0] == "delete" && args[1] == "user" {
 			fmt.Println("Possible completions:")
 			fmt.Println("  <username>    Username to delete")
+			return
+		}
+
+		if len(args) == 2 && args[0] == "delete" && args[1] == "service" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  ssh           Reset SSH configuration")
+			fmt.Println("  snmp          Reset SNMP configuration")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "delete" && args[1] == "service" && args[2] == "ssh" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  port          Reset SSH port to default (22)")
+			fmt.Println("  root-login    Reset root-login to default (disable)")
+			fmt.Println("  password-auth Reset password-auth to default (enable)")
+			fmt.Println("  listen-address")
+			fmt.Println("                Reset listen-address to default (0.0.0.0, ::)")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "delete" && args[1] == "service" && args[2] == "ssh" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Reset to default")
+			return
+		}
+
+		if len(args) == 3 && args[0] == "delete" && args[1] == "service" && args[2] == "snmp" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Disable SNMP service")
+			fmt.Println("  community     Reset community to default (public)")
+			fmt.Println("  location      Remove location setting")
+			fmt.Println("  contact       Remove contact setting")
+			return
+		}
+
+		if len(args) == 4 && args[0] == "delete" && args[1] == "service" && args[2] == "snmp" {
+			fmt.Println("Possible completions:")
+			fmt.Println("  <cr>          Reset to default")
 			return
 		}
 
@@ -1902,10 +2115,10 @@ func showHelp(line string) {
 			output.WriteString("\n")
 			output.WriteString("Available commands:\n")
 			output.WriteString("  configure             Enter configuration mode\n")
-			output.WriteString("  exit                  Exit to shell (root only)\n")
 			output.WriteString("  help                  Display this text\n")
 			output.WriteString("  ping                  Ping remote host\n")
 			output.WriteString("  show                  Show system information\n")
+			output.WriteString("  start shell           Start a Linux shell session\n")
 			output.WriteString("  system install        Install FloofOS to disk\n")
 			output.WriteString("  traceroute            Trace route to destination\n")
 			output.WriteString("\n")
@@ -2638,8 +2851,10 @@ func executeFloofOS(line string) {
 			handleSecuritySetCommands(args[2:])
 		} else if args[1] == "snmp" {
 			handleSNMPSetCommands(args[2:])
+		} else if args[1] == "service" {
+			handleServiceSetCommands(args[2:])
 		} else {
-			fmt.Println("Unknown set parameter. Available: hostname, all, bgp, system, security, snmp")
+			fmt.Println("Unknown set parameter. Available: hostname, all, bgp, system, security, service, snmp")
 		}
 
 	case "create":
@@ -2708,8 +2923,10 @@ func executeFloofOS(line string) {
 			deleteSystemUser(args[2])
 		} else if len(args) >= 2 && args[1] == "security" {
 			handleSecurityDeleteCommands(args[2:])
+		} else if len(args) >= 2 && args[1] == "service" {
+			handleServiceDeleteCommands(args[2:])
 		} else {
-			fmt.Println("Usage: delete user <username> | delete security ...")
+			fmt.Println("Usage: delete user <username> | delete security ... | delete service ...")
 		}
 
 	default:
@@ -3378,6 +3595,11 @@ func showConfiguration() {
 	}
 
 	sshLines := []string{}
+	sshPort := "22"
+	sshRootLogin := "disable"
+	sshPasswordAuth := "enable"
+	var sshListenAddrs []string
+
 	sshdConfig, err := os.ReadFile("/etc/ssh/sshd_config")
 	if err == nil {
 		lines := strings.Split(string(sshdConfig), "\n")
@@ -3390,31 +3612,42 @@ func showConfiguration() {
 			if len(parts) >= 2 {
 				switch parts[0] {
 				case "Port":
-					if parts[1] != "22" {
-						sshLines = append(sshLines, fmt.Sprintf("set service ssh port %s", parts[1]))
-					}
+					sshPort = parts[1]
 				case "ListenAddress":
-					if parts[1] != "0.0.0.0" && parts[1] != "::" {
-						sshLines = append(sshLines, fmt.Sprintf("set service ssh listen-address %s", parts[1]))
-					}
+					sshListenAddrs = append(sshListenAddrs, parts[1])
 				case "PermitRootLogin":
 					if strings.ToLower(parts[1]) == "yes" {
-						sshLines = append(sshLines, "set service ssh root-login enable")
+						sshRootLogin = "enable"
+					} else {
+						sshRootLogin = "disable"
 					}
 				case "PasswordAuthentication":
 					if strings.ToLower(parts[1]) == "no" {
-						sshLines = append(sshLines, "set service ssh password-auth disable")
+						sshPasswordAuth = "disable"
+					} else {
+						sshPasswordAuth = "enable"
 					}
 				}
 			}
 		}
 	}
-	if len(sshLines) > 0 {
-		for _, l := range sshLines {
-			output.WriteString(l + "\n")
+
+	sshLines = append(sshLines, fmt.Sprintf("set service ssh port %s", sshPort))
+	if len(sshListenAddrs) > 0 {
+		for _, addr := range sshListenAddrs {
+			sshLines = append(sshLines, fmt.Sprintf("set service ssh listen-address %s", addr))
 		}
-		output.WriteString("!\n")
+	} else {
+		sshLines = append(sshLines, "set service ssh listen-address 0.0.0.0")
+		sshLines = append(sshLines, "set service ssh listen-address ::")
 	}
+	sshLines = append(sshLines, fmt.Sprintf("set service ssh root-login %s", sshRootLogin))
+	sshLines = append(sshLines, fmt.Sprintf("set service ssh password-auth %s", sshPasswordAuth))
+
+	for _, l := range sshLines {
+		output.WriteString(l + "\n")
+	}
+	output.WriteString("!\n")
 
 	snmpdActive := false
 	cmd = exec.Command("systemctl", "is-active", "snmpd-dataplane.service")
@@ -3424,6 +3657,11 @@ func showConfiguration() {
 
 	if snmpdActive {
 		snmpLines := []string{"set service snmp enable"}
+
+		snmpCommunity := "public"
+		snmpLocation := ""
+		snmpContact := ""
+
 		if snmpData, err := os.ReadFile("/etc/snmp/snmpd-dataplane.conf"); err == nil {
 			lines := strings.Split(string(snmpData), "\n")
 			for _, line := range lines {
@@ -3433,24 +3671,29 @@ func showConfiguration() {
 				}
 				if strings.HasPrefix(trimmed, "rocommunity ") {
 					parts := strings.Fields(trimmed)
-					if len(parts) >= 2 && parts[1] != "public" {
-						snmpLines = append(snmpLines, fmt.Sprintf("set service snmp community %s", parts[1]))
+					if len(parts) >= 2 {
+						snmpCommunity = parts[1]
 					}
 				}
 				if strings.HasPrefix(trimmed, "syslocation ") {
-					loc := strings.TrimPrefix(trimmed, "syslocation ")
-					if loc != "FloofOS Router" {
-						snmpLines = append(snmpLines, fmt.Sprintf("set service snmp location %s", loc))
-					}
+					snmpLocation = strings.TrimPrefix(trimmed, "syslocation ")
 				}
 				if strings.HasPrefix(trimmed, "syscontact ") {
-					contact := strings.TrimPrefix(trimmed, "syscontact ")
-					if contact != "admin@localhost" {
-						snmpLines = append(snmpLines, fmt.Sprintf("set service snmp contact %s", contact))
-					}
+					snmpContact = strings.TrimPrefix(trimmed, "syscontact ")
 				}
 			}
 		}
+
+		if snmpCommunity != "public" {
+			snmpLines = append(snmpLines, fmt.Sprintf("set service snmp community %s", snmpCommunity))
+		}
+		if snmpLocation != "" {
+			snmpLines = append(snmpLines, fmt.Sprintf("set service snmp location %s", snmpLocation))
+		}
+		if snmpContact != "" {
+			snmpLines = append(snmpLines, fmt.Sprintf("set service snmp contact %s", snmpContact))
+		}
+
 		for _, l := range snmpLines {
 			output.WriteString(l + "\n")
 		}
@@ -4251,6 +4494,29 @@ func showTracerouteHelp() {
 	fmt.Println("  asn             Show AS for each hop")
 	fmt.Println("  source          Source IP address")
 	fmt.Println("  interface       Source interface")
+}
+
+func executeStartShell() {
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "/bin/bash"
+	}
+
+	fmt.Println("Starting shell session...")
+	fmt.Println("Type 'exit' to return to FloofOS CLI")
+	fmt.Println()
+
+	cmd := exec.Command(shell)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("Shell session ended: %v\n", err)
+	} else {
+		fmt.Println()
+		fmt.Println("Returned to FloofOS CLI")
+	}
 }
 
 func executePing(args []string) {
@@ -5563,6 +5829,285 @@ func handleSecuritySetCommands(args []string) {
 
 	default:
 		fmt.Println("Unknown security command. Use: firewall, fail2ban, ssh-key")
+	}
+}
+
+func handleServiceSetCommands(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: set service <ssh|snmp> ...")
+		return
+	}
+
+	switch args[0] {
+	case "ssh":
+		if len(args) < 2 {
+			fmt.Println("Usage: set service ssh <port|root-login|password-auth|listen-address> <value>")
+			return
+		}
+
+		switch args[1] {
+		case "port":
+			if len(args) < 3 {
+				fmt.Println("Usage: set service ssh port <1-65535>")
+				return
+			}
+			port, err := strconv.Atoi(args[2])
+			if err != nil || port < 1 || port > 65535 {
+				fmt.Println("Error: Invalid port number (1-65535)")
+				return
+			}
+			if err := security.SetSSHPort(port); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				auditLogError(fmt.Sprintf("Failed to set SSH port: %v", err))
+			} else {
+				fmt.Printf("SSH port set to %d\n", port)
+				auditLogInfo(fmt.Sprintf("SSH port changed to %d", port))
+			}
+
+		case "root-login":
+			if len(args) < 3 {
+				fmt.Println("Usage: set service ssh root-login <enable|disable>")
+				return
+			}
+			switch args[2] {
+			case "enable":
+				if err := security.SetRootLogin(true); err != nil {
+					fmt.Printf("Error: %v\n", err)
+					auditLogError(fmt.Sprintf("Failed to enable root login: %v", err))
+				} else {
+					fmt.Println("Root login enabled")
+					auditLogInfo("SSH root login enabled")
+				}
+			case "disable":
+				if err := security.SetRootLogin(false); err != nil {
+					fmt.Printf("Error: %v\n", err)
+					auditLogError(fmt.Sprintf("Failed to disable root login: %v", err))
+				} else {
+					fmt.Println("Root login disabled")
+					auditLogInfo("SSH root login disabled")
+				}
+			default:
+				fmt.Println("Usage: set service ssh root-login <enable|disable>")
+			}
+
+		case "password-auth":
+			if len(args) < 3 {
+				fmt.Println("Usage: set service ssh password-auth <enable|disable>")
+				return
+			}
+			switch args[2] {
+			case "enable":
+				if err := security.EnablePasswordAuth(); err != nil {
+					fmt.Printf("Error: %v\n", err)
+					auditLogError(fmt.Sprintf("Failed to enable password auth: %v", err))
+				} else {
+					fmt.Println("SSH password authentication enabled")
+					auditLogInfo("SSH password authentication enabled")
+				}
+			case "disable":
+				if err := security.DisablePasswordAuth(); err != nil {
+					fmt.Printf("Error: %v\n", err)
+					auditLogError(fmt.Sprintf("Failed to disable password auth: %v", err))
+				} else {
+					fmt.Println("SSH password authentication disabled")
+					auditLogInfo("SSH password authentication disabled")
+				}
+			default:
+				fmt.Println("Usage: set service ssh password-auth <enable|disable>")
+			}
+
+		case "listen-address":
+			if len(args) < 3 {
+				fmt.Println("Usage: set service ssh listen-address <ip-address>")
+				return
+			}
+			if err := security.SetListenAddress(args[2]); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				auditLogError(fmt.Sprintf("Failed to set SSH listen address: %v", err))
+			} else {
+				fmt.Printf("SSH listen address set to %s\n", args[2])
+				auditLogInfo(fmt.Sprintf("SSH listen address set to %s", args[2]))
+			}
+
+		default:
+			fmt.Println("Unknown SSH parameter. Use: port, root-login, password-auth, listen-address")
+		}
+
+	case "snmp":
+		if len(args) < 2 {
+			fmt.Println("Usage: set service snmp <enable|disable|community|location|contact> ...")
+			return
+		}
+
+		switch args[1] {
+		case "enable":
+			if err := snmp.EnableSNMP(); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				auditLogError(fmt.Sprintf("Failed to enable SNMP: %v", err))
+			} else {
+				fmt.Println("SNMP agent enabled")
+				auditLogInfo("SNMP agent enabled")
+			}
+
+		case "disable":
+			if err := snmp.DisableSNMP(); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				auditLogError(fmt.Sprintf("Failed to disable SNMP: %v", err))
+			} else {
+				fmt.Println("SNMP agent disabled")
+				auditLogInfo("SNMP agent disabled")
+			}
+
+		case "community":
+			if len(args) < 3 {
+				fmt.Println("Usage: set service snmp community <string>")
+				return
+			}
+			if err := snmp.SetCommunity(args[2]); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				auditLogError(fmt.Sprintf("Failed to set SNMP community: %v", err))
+			} else {
+				fmt.Printf("SNMP community set to '%s'\n", args[2])
+				auditLogInfo(fmt.Sprintf("SNMP community changed to %s", args[2]))
+			}
+
+		case "location":
+			if len(args) < 3 {
+				fmt.Println("Usage: set service snmp location <string>")
+				return
+			}
+			location := strings.Join(args[2:], " ")
+			if err := snmp.SetLocation(location); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				auditLogError(fmt.Sprintf("Failed to set SNMP location: %v", err))
+			} else {
+				fmt.Printf("SNMP location set to '%s'\n", location)
+				auditLogInfo(fmt.Sprintf("SNMP location set to %s", location))
+			}
+
+		case "contact":
+			if len(args) < 3 {
+				fmt.Println("Usage: set service snmp contact <string>")
+				return
+			}
+			contact := strings.Join(args[2:], " ")
+			if err := snmp.SetContact(contact); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				auditLogError(fmt.Sprintf("Failed to set SNMP contact: %v", err))
+			} else {
+				fmt.Printf("SNMP contact set to '%s'\n", contact)
+				auditLogInfo(fmt.Sprintf("SNMP contact set to %s", contact))
+			}
+
+		default:
+			fmt.Println("Unknown SNMP parameter. Use: enable, disable, community, location, contact")
+		}
+
+	default:
+		fmt.Println("Unknown service. Use: ssh, snmp")
+	}
+}
+
+func handleServiceDeleteCommands(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: delete service <ssh|snmp> [parameter]")
+		return
+	}
+
+	switch args[0] {
+	case "ssh":
+		if len(args) < 2 {
+			fmt.Println("Usage: delete service ssh <port|root-login|password-auth|listen-address>")
+			return
+		}
+
+		switch args[1] {
+		case "port":
+			if err := security.SetSSHPort(22); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				auditLogError(fmt.Sprintf("Failed to reset SSH port: %v", err))
+			} else {
+				fmt.Println("SSH port reset to default (22)")
+				auditLogInfo("SSH port reset to default (22)")
+			}
+
+		case "root-login":
+			if err := security.SetRootLogin(false); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				auditLogError(fmt.Sprintf("Failed to reset root login: %v", err))
+			} else {
+				fmt.Println("SSH root-login reset to default (disabled)")
+				auditLogInfo("SSH root-login reset to default")
+			}
+
+		case "password-auth":
+			if err := security.EnablePasswordAuth(); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				auditLogError(fmt.Sprintf("Failed to reset password auth: %v", err))
+			} else {
+				fmt.Println("SSH password-auth reset to default (enabled)")
+				auditLogInfo("SSH password-auth reset to default")
+			}
+
+		case "listen-address":
+			if err := security.ResetSSHListenAddress(); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				auditLogError(fmt.Sprintf("Failed to reset SSH listen address: %v", err))
+			} else {
+				fmt.Println("SSH listen-address reset to default (0.0.0.0, ::)")
+				auditLogInfo("SSH listen-address reset to default")
+			}
+
+		default:
+			fmt.Println("Unknown SSH parameter. Use: port, root-login, password-auth, listen-address")
+		}
+
+	case "snmp":
+		if len(args) < 2 {
+			if err := snmp.DisableSNMP(); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				auditLogError(fmt.Sprintf("Failed to disable SNMP: %v", err))
+			} else {
+				fmt.Println("SNMP service disabled")
+				auditLogInfo("SNMP service disabled")
+			}
+			return
+		}
+
+		switch args[1] {
+		case "community":
+			if err := snmp.SetCommunity("public"); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				auditLogError(fmt.Sprintf("Failed to reset SNMP community: %v", err))
+			} else {
+				fmt.Println("SNMP community reset to default (public)")
+				auditLogInfo("SNMP community reset to default")
+			}
+
+		case "location":
+			if err := snmp.SetLocation(""); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				auditLogError(fmt.Sprintf("Failed to reset SNMP location: %v", err))
+			} else {
+				fmt.Println("SNMP location removed")
+				auditLogInfo("SNMP location removed")
+			}
+
+		case "contact":
+			if err := snmp.SetContact(""); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				auditLogError(fmt.Sprintf("Failed to reset SNMP contact: %v", err))
+			} else {
+				fmt.Println("SNMP contact removed")
+				auditLogInfo("SNMP contact removed")
+			}
+
+		default:
+			fmt.Println("Unknown SNMP parameter. Use: community, location, contact")
+		}
+
+	default:
+		fmt.Println("Unknown service. Use: ssh, snmp")
 	}
 }
 
